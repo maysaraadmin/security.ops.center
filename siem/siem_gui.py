@@ -1,24 +1,86 @@
 """
 SIEM GUI Module
 
-Provides a graphical interface for the Security Information and Event Management system.
+A self-contained graphical interface for the Security Information and Event Management system.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-import asyncio
+import json
+import os
+import sys
+from typing import Dict, Any, List, Optional
 import threading
 import queue
-import json
 
-# Local imports
-from .core.siem import SIEM as SIEMCore
-from .detection.engine import DetectionEngine
-from .analytics.historical_analyzer import HistoricalAnalyzer
-
+# Set up basic logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('siem_gui.log')
+    ]
+)
 logger = logging.getLogger('siem.gui')
+
+# Simple SIEM core implementation
+class SIEMCore:
+    """Simplified SIEM core for the GUI."""
+    
+    def __init__(self, config: Dict[str, Any] = None):
+        """Initialize the SIEM core with optional configuration."""
+        self.config = config or {}
+        self.running = False
+        self.events = []
+        self.alerts = []
+        
+    def get_next_event(self) -> Optional[Dict[str, Any]]:
+        """Get the next event (simulated for demo)."""
+        if not self.running:
+            return None
+            
+        # Simulate receiving an event
+        event = {
+            'timestamp': datetime.now().isoformat(),
+            'source': 'simulator',
+            'type': 'network',
+            'details': 'Sample network event',
+            'severity': 'info'
+        }
+        self.events.append(event)
+        return event
+        
+    def start(self):
+        """Start the SIEM core."""
+        self.running = True
+        logger.info("SIEM core started")
+        
+    def stop(self):
+        """Stop the SIEM core."""
+        self.running = False
+        logger.info("SIEM core stopped")
+
+# Simple Detection Engine
+class DetectionEngine:
+    """Simplified detection engine for the GUI."""
+    
+    def analyze(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Analyze an event and return any generated alerts."""
+        alerts = []
+        
+        # Simple detection logic (example)
+        if 'error' in str(event.get('details', '')).lower():
+            alert = {
+                'timestamp': datetime.now().isoformat(),
+                'source': 'detection_engine',
+                'severity': 'high',
+                'message': f'Error detected: {event.get("details", "")}'
+            }
+            alerts.append(alert)
+            
+        return alerts
 
 class SIEMApp:
     """Main SIEM GUI application."""
