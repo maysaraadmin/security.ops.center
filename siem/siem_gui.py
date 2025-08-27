@@ -3,6 +3,7 @@ SIEM GUI Module
 
 A self-contained graphical interface for the Security Information and Event Management system.
 """
+from siem.analytics.historical_analyzer import HistoricalAnalyzer
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import logging
