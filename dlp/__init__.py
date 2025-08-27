@@ -1,35 +1,24 @@
 """
-Data Loss Prevention (DLP) Module
+DLP Package
 
-Provides data discovery, classification, and protection capabilities.
+This package contains the Data Loss Prevention system components.
 """
 
-__version__ = "1.0.0"
-
-from .core import DLPScanner, ClassificationResult
-from .policies import PolicyEngine, DataPattern
-from .sources import (
-    FileSystemScanner,
-    DatabaseScanner,
-    EmailScanner,
-    CloudStorageScanner
-)
-from .classifiers import (
-    RegexClassifier,
-    MLClassifier,
-    FileTypeClassifier
+# Import core components to make them available at the package level
+from .dlp_gui import main
+from dlp.core import (
+    DataType,
+    ClassificationResult,
+    DLPScanner,
+    DLPUserInteraction,
+    PolicyEngine
 )
 
 __all__ = [
-    'DLPScanner',
+    'main',
+    'DataType',
     'ClassificationResult',
-    'PolicyEngine',
-    'DataPattern',
-    'FileSystemScanner',
-    'DatabaseScanner',
-    'EmailScanner',
-    'CloudStorageScanner',
-    'RegexClassifier',
-    'MLClassifier',
-    'FileTypeClassifier'
+    'DLPScanner',
+    'DLPUserInteraction',
+    'PolicyEngine'
 ]

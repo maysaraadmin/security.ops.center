@@ -1,7 +1,0 @@
-2025-08-25 07:41:27,739 - siem.db_fix - INFO - Connecting to database: D:\siem\data\siem.db
-2025-08-25 07:41:27,750 - siem.db_fix - INFO - Existing tables: events, sqlite_sequence, alerts, users, settings
-2025-08-25 07:41:27,759 - siem.db_fix - INFO - Table exists: events
-2025-08-25 07:41:27,772 - siem.db_fix - INFO - Table exists: alerts
-2025-08-25 07:41:27,798 - siem.db_fix - INFO - Adding column alerts.foreign
-2025-08-25 07:41:27,934 - siem.db_fix - ERROR - Failed to add column alerts.foreign: near "FOREIGN": syntax error
-2025-08-25 07:41:27,983 - siem.db_fix - INFO - Database connection closed

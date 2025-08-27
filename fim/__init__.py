@@ -1,4 +1,4 @@
-""
+"""
 File Integrity Monitoring (FIM) Module
 
 Provides real-time monitoring of files, directories, and system configurations
@@ -11,23 +11,10 @@ from .core import FIMEngine, FileEvent, EventType, FileIntegrityError
 from .monitors import (
     FileMonitor,
     DirectoryMonitor,
-    RegistryMonitor,
-    FileSystemWatcher
-)
-from .handlers import (
-    EventHandler,
-    LoggingHandler,
-    AlertHandler,
-    EmailNotificationHandler,
-    WebhookHandler
-)
-from .utils import (
-    calculate_file_hash,
-    get_file_metadata,
-    is_system_file,
-    should_ignore_path
+    RegistryMonitor
 )
 
+# For backward compatibility
 __all__ = [
     'FIMEngine',
     'FileEvent',
@@ -35,15 +22,5 @@ __all__ = [
     'FileIntegrityError',
     'FileMonitor',
     'DirectoryMonitor',
-    'RegistryMonitor',
-    'FileSystemWatcher',
-    'EventHandler',
-    'LoggingHandler',
-    'AlertHandler',
-    'EmailNotificationHandler',
-    'WebhookHandler',
-    'calculate_file_hash',
-    'get_file_metadata',
-    'is_system_file',
-    'should_ignore_path'
+    'RegistryMonitor'
 ]

@@ -1,6 +1,0 @@
-2025-08-23 13:29:08,793 - verify_schema - INFO - Checking database at: D:\siem\data\siem.db
-2025-08-23 13:29:08,895 - verify_schema - INFO - Columns in events table: id, timestamp, source, event_type, severity, description, raw_data, category, status, source_ip, destination_ip, user_agent, hostname, process_name, process_id, parent_process_id, command_line, file_path, file_hash, registry_key, registry_value, registry_data, created_at, updated_at
-2025-08-23 13:29:08,929 - verify_schema - INFO - Database schema verification passed successfully
-2025-08-23 13:29:09,056 - verify_schema - INFO - Checking database at: D:\siem\siem.db
-2025-08-23 13:29:09,061 - verify_schema - INFO - Columns in events table: id, timestamp, source, event_type, severity, description, raw_data, processed, created_at, updated_at
-2025-08-23 13:29:09,074 - verify_schema - ERROR - Status column is missing from the events table

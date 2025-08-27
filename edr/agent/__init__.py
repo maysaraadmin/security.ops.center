@@ -1,16 +1,10 @@
 """
-EDR Agent - Lightweight endpoint monitoring and response.
-
-This module provides a cross-platform EDR agent with minimal performance impact.
+EDR Agent Package
+----------------
+This package contains the core EDR (Endpoint Detection and Response) agent implementation.
 """
 
-__version__ = "1.0.0"
-__all__ = [
-    'EDRAgent',
-    'Platform',
-    'AgentConfig',
-    'SystemInfo',
-]
+# Import key components to make them available at the package level
+from .edr_agent import EDRAgent, EDREvent, EventSeverity
 
-from .agent import EDRAgent
-from .models import Platform, AgentConfig, SystemInfo
+__all__ = ['EDRAgent', 'EDREvent', 'EventSeverity']

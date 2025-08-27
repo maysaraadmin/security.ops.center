@@ -6,11 +6,63 @@ Core functionality for data discovery and classification.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Dict, List, Optional, Set, Any, Callable, Coroutine
+from typing import Dict, List, Optional, Set, Any, Callable, Coroutine, TYPE_CHECKING
 import asyncio
 import logging
 
 logger = logging.getLogger('dlp.core')
+
+class DLPUserInteraction:
+    """Handles user interactions for DLP actions."""
+    
+    async def prompt_for_decision(
+        self,
+        message: str,
+        options: List[str],
+        default: Optional[str] = None
+    ) -> str:
+        """Prompt the user for a decision.
+        
+        Args:
+            message: The message to display to the user
+            options: List of available options
+            default: Default option if user doesn't respond
+            
+        Returns:
+            The user's selected option
+        """
+        # In a real implementation, this would show a dialog to the user
+        print(f"\nDLP Action Required:")
+        print(f"{message}")
+        print("Options:", ", ".join(f"[{i+1}] {opt}" for i, opt in enumerate(options)))
+        
+        if default:
+            print(f"Press Enter for default: {default}")
+            
+        while True:
+            choice = input("Your choice: ").strip()
+            if not choice and default:
+                return default
+                
+            if choice.isdigit() and 1 <= int(choice) <= len(options):
+                return options[int(choice)-1]
+                
+            print(f"Please enter a number between 1 and {len(options)}")
+    
+    def log_action(self, action: str, details: Dict[str, Any]) -> None:
+        """Log a DLP action.
+        
+        Args:
+            action: The action being taken
+            details: Additional details about the action
+        """
+        logger.info(f"DLP Action: {action} - {details}")
+
+# Forward declarations for type hints
+if TYPE_CHECKING:
+    from typing import Optional as Opt
+    DLPScanner = 'DLPScanner'
+    PolicyEngine = 'PolicyEngine'
 
 class DataType(Enum):
     """Types of sensitive data."""
@@ -43,7 +95,7 @@ class ClassificationResult:
 class DLPScanner:
     """Main DLP scanner class that coordinates scanning and classification."""
     
-    def __init__(self):
+    def __init__(self, user_interaction: Optional[DLPUserInteraction] = None):
         self.scanners = []
         self.classifiers = []
         self.policy_engine = PolicyEngine()
@@ -213,6 +265,53 @@ class DLPScanner:
             if scanner.scan_type == scan_type:
                 return scanner
         return None
+
+class DLPUserInteraction:
+    """Handles user interactions for DLP actions."""
+    
+    async def prompt_for_decision(
+        self,
+        message: str,
+        options: List[str],
+        default: Optional[str] = None
+    ) -> str:
+        """Prompt the user for a decision.
+        
+        Args:
+            message: The message to display to the user
+            options: List of available options
+            default: Default option if user doesn't respond
+            
+        Returns:
+            The user's selected option
+        """
+        # In a real implementation, this would show a dialog to the user
+        print(f"\nDLP Action Required:")
+        print(f"{message}")
+        print("Options:", ", ".join(f"[{i+1}] {opt}" for i, opt in enumerate(options)))
+        
+        if default:
+            print(f"Press Enter for default: {default}")
+            
+        while True:
+            choice = input("Your choice: ").strip()
+            if not choice and default:
+                return default
+                
+            if choice.isdigit() and 1 <= int(choice) <= len(options):
+                return options[int(choice)-1]
+                
+            print(f"Please enter a number between 1 and {len(options)}")
+    
+    def log_action(self, action: str, details: Dict[str, Any]) -> None:
+        """Log a DLP action.
+        
+        Args:
+            action: The action being taken
+            details: Additional details about the action
+        """
+        logger.info(f"DLP Action: {action} - {details}")
+
 
 class PolicyEngine:
     """Engine for managing and applying DLP policies."""

@@ -1,21 +1,22 @@
 """
-Enhanced EDR Agent with detection and monitoring capabilities.
+EDR Agent Core
+-------------
+Core implementation of the Endpoint Detection and Response agent.
 """
-import os
 import time
-import logging
-import threading
 import json
-import platform
-import psutil
-from typing import Dict, List, Optional, Any, Callable, Union
-from pathlib import Path
-from datetime import datetime
+import logging
+from enum import Enum, auto
 from dataclasses import dataclass, asdict, field
-from enum import Enum
+from datetime import datetime
+from typing import Dict, List, Optional, Callable, Any
+from pathlib import Path
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class EventSeverity(Enum):
-    """Severity levels for events."""
+    """Severity levels for EDR events."""
     INFO = "INFO"
     LOW = "LOW"
     MEDIUM = "MEDIUM"
@@ -23,262 +24,209 @@ class EventSeverity(Enum):
     CRITICAL = "CRITICAL"
 
 @dataclass
-class SystemMetrics:
-    """System metrics data class."""
-    timestamp: float
-    cpu_percent: float
-    memory_percent: float
-    disk_percent: float
-    network_bytes_sent: int
-    network_bytes_recv: int
-    processes: int
-    boot_time: float = field(default_factory=lambda: psutil.boot_time())
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return asdict(self)
-
 class EDREvent:
-    """Enhanced event class for EDR with severity and source tracking."""
-    def __init__(self, 
-                 event_type: str, 
-                 data: dict,
-                 severity: EventSeverity = EventSeverity.INFO,
-                 source: str = None,
-                 tags: List[str] = None):
-        self.event_id = f"evt_{int(datetime.utcnow().timestamp() * 1000)}"
-        self.event_type = event_type
-        self.data = data
-        self.timestamp = datetime.utcnow()
-        self.severity = severity
-        self.source = source or platform.node()
-        self.tags = tags or []
-        
-    def to_dict(self) -> dict:
-        """Convert event to dictionary."""
-        return {
-            'event_id': self.event_id,
-            'event_type': self.event_type,
-            'data': self.data,
-            'timestamp': self.timestamp.isoformat(),
-            'severity': self.severity.value,
-            'source': self.source,
-            'tags': self.tags
-        }
+    """Represents a security event detected by the EDR agent."""
+    event_id: str
+    event_type: str
+    timestamp: float
+    severity: EventSeverity
+    source: str
+    details: Dict[str, Any]
+    agent_id: Optional[str] = None
+    process_id: Optional[int] = None
+    process_name: Optional[str] = None
+    user: Optional[str] = None
+    hostname: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the event to a dictionary."""
+        result = asdict(self)
+        result['severity'] = self.severity.value
+        result['timestamp'] = datetime.fromtimestamp(self.timestamp).isoformat()
+        return result
+    
+    def to_json(self) -> str:
+        """Convert the event to a JSON string."""
+        return json.dumps(self.to_dict())
 
 class EDRAgent:
-    """Enhanced EDR Agent with monitoring and detection capabilities."""
+    """
+    Main EDR (Endpoint Detection and Response) agent class.
     
-    def __init__(self, config: dict = None):
-        """Initialize the EDR agent with configuration."""
+    This class handles the core functionality of the EDR agent, including
+    event collection, processing, and response actions.
+    """
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the EDR agent with the given configuration."""
         self.config = config or {}
         self.running = False
-        self.event_queue = []
-        self.event_history = []
-        self.metrics_history = []
-        self.event_queue_lock = threading.Lock()
-        self.metrics_lock = threading.Lock()
-        self.max_history = self.config.get('max_history', 1000)
-        
-        # Callback registry
+        self.start_time = time.time()
+        self.events: List[EDREvent] = []
         self.callbacks = {
-            'threat_detected': [],
-            'event_received': [],
-            'metrics_updated': [],
-            'agent_started': [],
-            'agent_stopped': []
+            'event': [],
+            'metrics': [],
+            'start': [],
+            'stop': []
         }
+        self._load_config()
         
-        # Initialize logging
-        self.logger = logging.getLogger('edr.agent')
-        self._setup_logging()
-        
-        # System monitoring
-        self.monitoring_thread = None
-        self.monitoring_interval = self.config.get('monitoring_interval', 5.0)
-        
-        self.logger.info("EDR Agent initialized")
-        
-    def _setup_logging(self):
-        """Configure logging for the agent."""
-        log_level = self.config.get('log_level', 'INFO').upper()
-        log_file = self.config.get('log_file', 'edr_agent.log')
-        
-        # Create log directory if it doesn't exist
-        log_dir = os.path.dirname(log_file)
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
-            
-        # Configure root logger
-        logging.basicConfig(
-            level=getattr(logging, log_level, logging.INFO),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler()
-            ]
-        )
+    def _load_config(self) -> None:
+        """Load configuration from file if not provided."""
+        if not self.config:
+            # Default configuration
+            self.config = {
+                'log_level': 'INFO',
+                'log_file': 'edr_agent.log',
+                'checkin_interval': 300,  # 5 minutes
+                'max_offline_time': 900,  # 15 minutes
+            }
     
     def start(self) -> bool:
-        """Start the EDR agent and monitoring."""
+        """Start the EDR agent."""
         if self.running:
-            self.logger.warning("EDR Agent is already running")
+            logger.warning("EDR agent is already running")
             return False
             
-        self.logger.info("Starting EDR Agent...")
+        logger.info("Starting EDR agent...")
         self.running = True
+        self.start_time = time.time()
         
-        # Start system monitoring
-        self.monitoring_thread = threading.Thread(
-            target=self._monitor_system,
-            daemon=True
-        )
-        self.monitoring_thread.start()
+        # Initialize components
+        self._initialize_components()
         
-        # Trigger callbacks
-        self._trigger_callbacks('agent_started')
-        self.logger.info("EDR Agent started successfully")
+        # Notify callbacks
+        for callback in self.callbacks['start']:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in start callback: {e}")
+        
+        logger.info("EDR agent started successfully")
         return True
     
     def stop(self) -> bool:
-        """Stop the EDR agent and clean up resources."""
+        """Stop the EDR agent."""
         if not self.running:
-            self.logger.warning("EDR Agent is not running")
+            logger.warning("EDR agent is not running")
             return False
             
-        self.logger.info("Stopping EDR Agent...")
+        logger.info("Stopping EDR agent...")
         self.running = False
         
-        # Wait for monitoring thread to finish
-        if self.monitoring_thread and self.monitoring_thread.is_alive():
-            self.monitoring_thread.join(timeout=5.0)
-            
-        # Trigger callbacks
-        self._trigger_callbacks('agent_stopped')
-        self.logger.info("EDR Agent stopped")
+        # Clean up resources
+        self._cleanup_components()
+        
+        # Notify callbacks
+        for callback in self.callbacks['stop']:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in stop callback: {e}")
+        
+        logger.info("EDR agent stopped successfully")
         return True
     
-    def register_callback(self, event_type: str, callback: Callable):
-        """Register a callback for a specific event type."""
-        if event_type in self.callbacks:
-            self.callbacks[event_type].append(callback)
-        else:
-            self.logger.warning(f"Unknown event type: {event_type}")
+    def _initialize_components(self) -> None:
+        """Initialize EDR components."""
+        # Placeholder for component initialization
+        logger.debug("Initializing EDR components...")
     
-    def _trigger_callbacks(self, event_type: str, *args, **kwargs):
-        """Trigger all registered callbacks for an event type."""
-        for callback in self.callbacks.get(event_type, []):
-            try:
-                callback(*args, **kwargs)
-            except Exception as e:
-                self.logger.error(f"Error in {event_type} callback: {e}")
+    def _cleanup_components(self) -> None:
+        """Clean up EDR components."""
+        # Placeholder for component cleanup
+        logger.debug("Cleaning up EDR components...")
     
-    def submit_event(self, event: Union[EDREvent, dict]):
-        """Submit an event to the EDR agent for processing."""
-        if isinstance(event, dict):
-            event = EDREvent(
-                event_type=event.get('event_type', 'unknown'),
-                data=event.get('data', {}),
-                severity=EventSeverity(event.get('severity', 'INFO')),
-                source=event.get('source'),
-                tags=event.get('tags', [])
-            )
-            
-        with self.event_queue_lock:
-            self.event_queue.append(event)
-            # Add to history
-            self.event_history.append(event)
-            # Trim history if needed
-            if len(self.event_history) > self.max_history:
-                self.event_history = self.event_history[-self.max_history:]
-                
-        self.logger.debug(f"Event submitted: {event.event_type} (ID: {event.event_id})")
-        self._trigger_callbacks('event_received', event)
-        return event.event_id
-    
-    def get_queued_events(self, clear: bool = True) -> List[EDREvent]:
-        """Get all queued events and optionally clear the queue.
+    def add_event(self, event: EDREvent) -> None:
+        """
+        Add a new security event to the event log.
         
         Args:
-            clear: If True, clears the event queue after retrieval
-            
-        Returns:
-            List of EDREvent objects
+            event: The EDR event to add
         """
-        with self.event_queue_lock:
-            events = self.event_queue.copy()
-            if clear:
-                self.event_queue.clear()
-        return events
+        self.events.append(event)
         
-    def get_event_history(self, limit: int = 100) -> List[EDREvent]:
-        """Get recent events from history.
+        # Notify event callbacks
+        for callback in self.callbacks['event']:
+            try:
+                callback(event)
+            except Exception as e:
+                logger.error(f"Error in event callback: {e}")
+    
+    def get_events(self, limit: int = 100, **filters) -> List[EDREvent]:
+        """
+        Get a list of events, optionally filtered.
         
         Args:
             limit: Maximum number of events to return
+            **filters: Filter criteria (e.g., severity='HIGH')
             
         Returns:
-            List of recent EDREvent objects
+            List of matching EDREvent objects
         """
-        return self.event_history[-limit:]
+        events = self.events[-limit:]  # Get most recent events
         
-    def get_metrics_history(self, limit: int = 60) -> List[SystemMetrics]:
-        """Get recent system metrics.
+        # Apply filters
+        if filters:
+            events = [
+                e for e in events
+                if all(
+                    getattr(e, k, None) == v 
+                    for k, v in filters.items()
+                )
+            ]
+            
+        return events
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get current agent metrics.
+        
+        Returns:
+            Dictionary containing agent metrics
+        """
+        metrics = {
+            'status': 'running' if self.running else 'stopped',
+            'uptime': time.time() - self.start_time,
+            'event_count': len(self.events),
+            'event_counts_by_severity': {
+                level.name: sum(1 for e in self.events if e.severity == level)
+                for level in EventSeverity
+            },
+            'last_event_time': (
+                self.events[-1].timestamp if self.events else None
+            ),
+        }
+        
+        # Notify metrics callbacks
+        for callback in self.callbacks['metrics']:
+            try:
+                metrics.update(callback(metrics) or {})
+            except Exception as e:
+                logger.error(f"Error in metrics callback: {e}")
+        
+        return metrics
+    
+    def register_callback(self, event_type: str, callback: Callable) -> None:
+        """
+        Register a callback function for agent events.
         
         Args:
-            limit: Maximum number of metrics to return
-            
-        Returns:
-            List of SystemMetrics objects
+            event_type: Type of event to register for ('event', 'metrics', 'start', 'stop')
+            callback: Callback function to register
         """
-        with self.metrics_lock:
-            return self.metrics_history[-limit:]
-            
-    def _monitor_system(self):
-        """Monitor system metrics in a background thread."""
-        self.logger.info("Starting system monitoring")
+        if event_type in self.callbacks:
+            self.callbacks[event_type].append(callback)
+        else:
+            logger.warning(f"Unknown event type: {event_type}")
+    
+    def remove_callback(self, event_type: str, callback: Callable) -> None:
+        """
+        Remove a registered callback function.
         
-        while self.running:
-            try:
-                # Collect system metrics
-                metrics = SystemMetrics(
-                    timestamp=time.time(),
-                    cpu_percent=psutil.cpu_percent(interval=1),
-                    memory_percent=psutil.virtual_memory().percent,
-                    disk_percent=psutil.disk_usage('/').percent,
-                    network_bytes_sent=psutil.net_io_counters().bytes_sent,
-                    network_bytes_recv=psutil.net_io_counters().bytes_recv,
-                    processes=len(psutil.pids())
-                )
-                
-                # Store metrics
-                with self.metrics_lock:
-                    self.metrics_history.append(metrics)
-                    if len(self.metrics_history) > self.max_history:
-                        self.metrics_history = self.metrics_history[-self.max_history:]
-                
-                # Trigger callbacks
-                self._trigger_callbacks('metrics_updated', metrics)
-                
-                # Sleep until next interval
-                time.sleep(self.monitoring_interval)
-                
-            except Exception as e:
-                self.logger.error(f"Error in system monitoring: {e}")
-                time.sleep(5)  # Prevent tight loop on errors
-                
-    def get_status(self) -> dict:
-        """Get current agent status."""
-        return {
-            'running': self.running,
-            'queued_events': len(self.event_queue),
-            'total_events': len(self.event_history),
-            'callbacks': {k: len(v) for k, v in self.callbacks.items()},
-            'monitoring_interval': self.monitoring_interval,
-            'start_time': min([e.timestamp for e in self.event_history], default=None),
-            'system': {
-                'platform': platform.platform(),
-                'python_version': platform.python_version(),
-                'process_id': os.getpid()
-            }
-        }
+        Args:
+            event_type: Type of event to unregister from
+            callback: Callback function to remove
+        """
+        if event_type in self.callbacks and callback in self.callbacks[event_type]:
+            self.callbacks[event_type].remove(callback)

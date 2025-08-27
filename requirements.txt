@@ -24,3 +24,10 @@ python-engineio==4.6.1
 python-socketio==5.8.0
 pywin32>=311; sys_platform == "win32"
 requests==2.31.0
+pyyaml>=6.0
+pykafka>=2.8.0
+redis>=4.3.4
+prometheus-client>=0.15.0
+python-json-logger>=2.0.4
+colorlog>=6.7.0
+
