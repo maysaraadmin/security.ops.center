@@ -18,7 +18,7 @@ os.environ['FLASK_ENV'] = 'development'
 
 # Import the app
 try:
-    from web.app_clean import app, socketio
+    from src.web.app_clean import app, socketio
 except ImportError as e:
     print(f"Error importing web app: {e}")
     print("Please make sure you have installed all required dependencies.")

@@ -7,7 +7,7 @@ import time
 import logging
 import traceback
 from pathlib import Path
-from edr.agent.edr_agent import EDRAgent
+from src.edr.agent.edr_agent import EDRAgent
 
 # Set up logging
 logging.basicConfig(

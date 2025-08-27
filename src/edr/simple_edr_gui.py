@@ -6,7 +6,7 @@ from tkinter import ttk, scrolledtext, messagebox
 import json
 from datetime import datetime
 import logging
-from edr.agent.edr_agent import EDRAgent, EDREvent
+from src.edr.agent.edr_agent import EDRAgent, EDREvent
 
 class SimpleEDRGUI:
     def __init__(self, root, agent):

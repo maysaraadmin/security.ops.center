@@ -24,8 +24,8 @@ IMPORT_MAPPING = {
     "import views.": "import siem.ui.views.",
     "from managers.": "from siem.core.managers.",
     "import managers.": "import siem.core.managers.",
-    "from utils.": "from infrastructure.utils.",
-    "import utils.": "import infrastructure.utils.",
+    "from src.utils.": "from infrastructure.utils.",
+    "import src.utils.": "import infrastructure.utils.",
 }
 
 def update_imports_in_file(file_path):

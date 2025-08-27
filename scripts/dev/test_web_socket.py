@@ -19,7 +19,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Import SIEM manager
-from web.siem_manager import siem_manager
+from src.web.siem_manager import siem_manager
 
 # Initialize Flask app
 app = Flask(__name__, template_folder='web/templates')

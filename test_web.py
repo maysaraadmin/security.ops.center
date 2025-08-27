@@ -1,57 +1,59 @@
-"""
-Test script to run a minimal SIEM web interface for testing.
-"""
+#!/usr/bin/env python3
+"""Test script to verify the web application functionality."""
+
 import os
 import sys
-from flask import Flask, render_template_string
+import unittest
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
-# Create a basic Flask app
-app = Flask(__name__)
+# Add the project root to the Python path
+PROJECT_ROOT = Path(__file__).parent.absolute()
+sys.path.insert(0, str(PROJECT_ROOT))
 
-# Simple route to test the web interface
-@app.route('/')
-def index():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>SIEM Dashboard</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .container { max-width: 1200px; margin: 0 auto; }
-            .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
-            .content { margin-top: 20px; }
-            .event-list { border: 1px solid #ddd; border-radius: 5px; padding: 15px; }
-            .event { padding: 10px; border-bottom: 1px solid #eee; }
-            .event:last-child { border-bottom: none; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>Security Operations Center</h1>
-                <p>SIEM Dashboard</p>
-            </div>
-            
-            <div class="content">
-                <h2>Recent Security Events</h2>
-                <div class="event-list">
-                    <div class="event">
-                        <strong>Event 1:</strong> User login detected
-                    </div>
-                    <div class="event">
-                        <strong>Event 2:</strong> File modification detected
-                    </div>
-                    <div class="event">
-                        <strong>Event 3:</strong> Network connection established
-                    </div>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+class TestWebApp(unittest.TestCase):
+    """Test cases for the web application."""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Set up test environment."""
+        # Set up test configuration
+        os.environ['FLASK_ENV'] = 'testing'
+        os.environ['TESTING'] = 'True'
+        
+        # Import the app after setting up the environment
+        from src.web.app import create_app
+        cls.app = create_app()
+        cls.client = cls.app.test_client()
+    
+    def test_home_page(self):
+        ""Test the home page returns a 200 status code.""
+        with self.app.test_client() as client:
+            response = client.get('/')
+            self.assertEqual(response.status_code, 200)
+    
+    def test_login_page(self):
+        ""Test the login page returns a 200 status code.""
+        with self.app.test_client() as client:
+            response = client.get('/login')
+            self.assertEqual(response.status_code, 200)
+    
+    @patch('src.web.app.edr_agent')
+    def test_api_status(self, mock_edr_agent):
+        ""Test the API status endpoint.""
+        # Mock the EDR agent response
+        mock_edr_agent.get_status.return_value = {
+            'status': 'running',
+            'version': '1.0.0',
+            'uptime': 3600
+        }
+        
+        with self.app.test_client() as client:
+            response = client.get('/api/status')
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            self.assertIn('status', data)
+            self.assertEqual(data['status'], 'running')
 
 if __name__ == '__main__':
-    print("Starting SIEM web interface on http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    unittest.main()

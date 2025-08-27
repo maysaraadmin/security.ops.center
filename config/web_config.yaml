@@ -1,0 +1,86 @@
+# Web Application Configuration
+
+# Application settings
+app:
+  env: development  # or 'production'
+  debug: true
+  secret_key: your-secret-key-here  # Change this in production
+  host: 0.0.0.0
+  port: 5000
+
+# Database configuration
+database:
+  uri: sqlite:///data/edr_web.db  # SQLite by default, change for production
+  echo: false
+
+# Security settings
+security:
+  password_hash_algorithm: sha256
+  password_salt_rounds: 10
+  jwt_secret_key: your-jwt-secret-key  # Change this in production
+  jwt_access_token_expires: 3600  # 1 hour in seconds
+  cors_allowed_origins:
+    - "http://localhost:5000"
+    - "http://127.0.0.1:5000"
+  rate_limit: "1000 per day;100 per hour"
+  session_lifetime: 7200  # 2 hours in seconds
+
+# Logging configuration
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: logs/web_application.log
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  max_size: 10  # MB
+  backup_count: 5
+
+# Web application settings
+web:
+  upload_dir: uploads
+  max_upload_size: 16777216  # 16MB in bytes
+  session_cookie_secure: false  # Set to true in production with HTTPS
+  session_cookie_http_only: true
+  session_cookie_same_site: "Lax"
+
+# EDR Agent settings
+edr:
+  enabled: true
+  checkin_interval: 300  # 5 minutes in seconds
+  max_offline_time: 900  # 15 minutes in seconds
+  log_level: INFO
+  log_file: logs/edr_agent.log
+  max_history: 1000
+  monitoring_interval: 2.0
+
+# Email configuration (for notifications)
+email:
+  server: ""
+  port: 587
+  use_tls: true
+  username: ""
+  password: ""
+  default_sender: "noreply@example.com"
+  admin_email: "admin@example.com"
+
+# Feature flags
+features:
+  enable_registration: false
+  enable_password_reset: false
+  enable_email_verification: false
+  enable_api_docs: true
+
+# API settings
+api:
+  version: "v1"
+  rate_limit: "200 per day;20 per hour"
+  enable_swagger: true
+  enable_rate_limiting: true
+
+# Paths (relative to the project root)
+paths:
+  templates: "web/templates"
+  static: "web/static"
+  uploads: "uploads"
+  logs: "logs"
+  data: "data"
+  rules: "config/rules"
+  temp: "tmp"

@@ -6,9 +6,9 @@ A modern web-based interface for the EDR Agent with real-time monitoring and man
 import os
 import json
 import logging
-import secrets
 from datetime import datetime, timedelta
 from functools import wraps
+from pathlib import Path
 
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
 from flask_socketio import SocketIO, emit
@@ -17,37 +17,57 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 # Local imports
-from edr.agent.edr_agent import EDRAgent, EDREvent, EventSeverity
+from src.edr.agent.edr_agent import EDRAgent, EDREvent, EventSeverity
+from src.web.config import get_web_config
 
-# Configuration
-class Config:
-    # Security
-    SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
-    SESSION_COOKIE_SECURE = os.environ.get('FLASK_ENV') == 'production'
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
-    
-    # Application
-    DEBUG = os.environ.get('FLASK_DEBUG', '1') == '1'
-    EDR_CONFIG = {
-        'log_level': 'INFO',
-        'log_file': 'logs/edr_agent.log',
-        'max_history': 1000,
-        'monitoring_interval': 2.0
-    }
-    
-    # Authentication
-    LOGIN_DISABLED = os.environ.get('LOGIN_DISABLED', '0') == '1'
-    
-    # Session
-    PERMANENT_SESSION_LIFETIME = timedelta(hours=2)
+# Initialize configuration
+config = get_web_config()
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config.from_object(Config)
+
+# Configure Flask app from our config
+app_config = config.to_dict()
+app.secret_key = app_config['app']['secret_key']
+app.config.update({
+    'DEBUG': app_config['app']['debug'],
+    'SECRET_KEY': app_config['app']['secret_key'],
+    'SESSION_COOKIE_SECURE': app_config['app']['env'] == 'production',
+    'SESSION_COOKIE_HTTPONLY': True,
+    'SESSION_COOKIE_SAMESITE': 'Lax',
+    'PERMANENT_SESSION_LIFETIME': timedelta(
+        seconds=app_config['security'].get('session_lifetime', 7200)  # Default 2 hours
+    ),
+    'MAX_CONTENT_LENGTH': app_config['web'].get('max_upload_size', 16 * 1024 * 1024),  # 16MB
+    'UPLOAD_FOLDER': app_config['web'].get('upload_dir', 'uploads'),
+    'SQLALCHEMY_DATABASE_URI': app_config['database']['uri'],
+    'SQLALCHEMY_TRACK_MODIFICATIONS': False,
+    'LOGIN_DISABLED': False,  # Can be overridden in config
+})
+
+# EDR Configuration
+EDR_CONFIG = {
+    'log_level': app_config['logging']['level'],
+    'log_file': app_config['logging']['file'],
+    'max_history': 1000,
+    'monitoring_interval': 2.0
+}
 
 # Initialize extensions
 csrf = CSRFProtect(app)
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, app_config['logging']['level'].upper()),
+    format=app_config['logging']['format'],
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(app_config['logging']['file'])
+    ] if app_config['logging'].get('file') else [logging.StreamHandler()]
+)
+
+logger = logging.getLogger(__name__)
+logger.info('Application started with config: %s', {k: v for k, v in app_config.items() if 'secret' not in k.lower()})
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
@@ -64,7 +84,7 @@ login_manager.login_message = 'Please log in to access this page.'
 login_manager.login_message_category = 'info'
 
 # Initialize EDR Agent
-edr_agent = EDRAgent(Config.EDR_CONFIG)
+edr_agent = EDRAgent(config=EDR_CONFIG)
 
 # Mock user database (replace with a real database in production)
 users = {

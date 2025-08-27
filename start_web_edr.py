@@ -1,230 +1,178 @@
+#!/usr/bin/env python3
 """
-Start Script for EDR Agent with Web Interface
--------------------------------------------
-This script starts both the EDR agent and the web interface.
+Start script for the EDR Web Application and Agent.
+
+This script initializes and starts both the web interface and the EDR agent
+with proper configuration and error handling.
 """
 import os
 import sys
-import subprocess
 import time
+import signal
+import logging
+import threading
 import webbrowser
 from pathlib import Path
 
-# Configuration
-HOST = '127.0.0.1'  # Changed from 0.0.0.0 for better compatibility on Windows
-PORT = 5000
-EDR_AGENT_SCRIPT = 'start_edr.py'
-WEB_APP_SCRIPT = 'web/app_enhanced.py'
-REQUIREMENTS_FILE = 'web/requirements-web.txt'
+# Add the project root to the Python path
+sys.path.insert(0, str(Path(__file__).parent.absolute()))
 
-# ANSI color codes for console output
-class Colors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+# Configure logging before importing other modules
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('logs/startup.log')
+    ]
+)
 
-def print_header():
-    """Print the application header."""
-    print(f"{Colors.HEADER}{'='*60}")
-    print(f"{'EDR Agent with Web Interface'.center(60)}")
-    print(f"{'='*60}{Colors.ENDC}\n")
+logger = logging.getLogger(__name__)
 
-def check_requirements():
-    """Check if all required Python packages are installed."""
-    print(f"{Colors.OKBLUE}[*] Checking requirements...{Colors.ENDC}")
-    try:
-        with open(REQUIREMENTS_FILE, 'r') as f:
-            requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-        
-        import pkg_resources
-        installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
-        missing_packages = []
-        
-        for req in requirements:
-            req_name = req.split('==')[0].lower()
-            if req_name not in installed_packages:
-                missing_packages.append(req_name)
-        
-        if missing_packages:
-            print(f"{Colors.WARNING}[!] Missing required packages: {', '.join(missing_packages)}{Colors.ENDC}")
-            install = input("Do you want to install missing packages? (y/n): ").strip().lower()
-            if install == 'y':
-                print(f"{Colors.OKBLUE}[*] Installing missing packages...{Colors.ENDC}")
-                subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', REQUIREMENTS_FILE])
-                print(f"{Colors.OKGREEN}[+] Successfully installed all required packages{Colors.ENDC}")
-            else:
-                print(f"{Colors.WARNING}[!] Some required packages are missing. The application may not work correctly.{Colors.ENDC}")
-        else:
-            print(f"{Colors.OKGREEN}[+] All required packages are installed{Colors.ENDC}")
-            
-    except Exception as e:
-        print(f"{Colors.FAIL}[!] Error checking requirements: {e}{Colors.ENDC}")
-        return False
-    
-    return True
+# Import application components
+from src.web.app_enhanced import app, socketio
+from src.edr.agent.edr_agent import EDRAgent
+from src.common.config import Config
+from src.web.config import get_web_config
+
+# Global variables
+edr_agent = None
+web_thread = None
+shutdown_event = threading.Event()
 
 def start_edr_agent():
-    """Start the EDR agent in a separate process."""
-    print(f"{Colors.OKBLUE}[*] Starting EDR Agent...{Colors.ENDC}")
+    """Initialize and start the EDR agent."""
+    global edr_agent
     
     try:
-        # Check if the EDR agent script exists
-        if not os.path.exists(EDR_AGENT_SCRIPT):
-            print(f"{Colors.FAIL}[!] EDR agent script not found: {EDR_AGENT_SCRIPT}{Colors.ENDC}")
-            return None
+        # Get configuration
+        config = Config()
         
-        # Start the EDR agent in a separate process
-        edr_process = subprocess.Popen(
-            [sys.executable, EDR_AGENT_SCRIPT],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
-        )
+        # Initialize EDR agent
+        edr_agent = EDRAgent(config={
+            'log_level': config.get('edr.log_level', 'INFO'),
+            'log_file': config.get('edr.log_file', 'logs/edr_agent.log'),
+            'checkin_interval': config.get('edr.checkin_interval', 300),
+            'max_offline_time': config.get('edr.max_offline_time', 900),
+        })
         
-        # Wait a moment to check if the process started successfully
-        time.sleep(2)
+        logger.info("Starting EDR agent...")
+        edr_agent.start()
+        logger.info("EDR agent started successfully")
         
-        if edr_process.poll() is not None:
-            # Process has already terminated
-            _, stderr = edr_process.communicate()
-            print(f"{Colors.FAIL}[!] Failed to start EDR agent:{Colors.ENDC}")
-            print(stderr)
-            return None
-        
-        print(f"{Colors.OKGREEN}[+] EDR Agent started successfully (PID: {edr_process.pid}){Colors.ENDC}")
-        return edr_process
-        
+        # Keep the agent running until shutdown is requested
+        while not shutdown_event.is_set():
+            time.sleep(1)
+            
     except Exception as e:
-        print(f"{Colors.FAIL}[!] Error starting EDR agent: {e}{Colors.ENDC}")
-        return None
+        logger.error(f"Failed to start EDR agent: {e}", exc_info=True)
+        shutdown()
+
 
 def start_web_interface():
-    """Start the web interface in a separate process."""
-    print(f"{Colors.OKBLUE}[*] Starting Web Interface...{Colors.ENDC}")
-    
+    """Start the Flask web interface."""
     try:
-        # Check if the web app script exists
-        if not os.path.exists(WEB_APP_SCRIPT):
-            print(f"{Colors.FAIL}[!] Web application script not found: {WEB_APP_SCRIPT}{Colors.ENDC}")
-            return None
+        # Get web configuration
+        web_config = get_web_config()
+        host = web_config.get('app.host', '0.0.0.0')
+        port = web_config.get('app.port', 5000)
         
-        # Set environment variables for the web app
-        env = os.environ.copy()
-        env['FLASK_APP'] = 'app_enhanced.py'
-        env['FLASK_ENV'] = 'development'
-        env['PYTHONPATH'] = os.path.dirname(os.path.abspath(__file__))
+        logger.info(f"Starting web interface on http://{host}:{port}")
         
-        # Start the web app in a separate process
-        web_process = subprocess.Popen(
-            [sys.executable, WEB_APP_SCRIPT],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
+        # Start the web server in a separate thread
+        socketio.run(
+            app,
+            host=host,
+            port=port,
+            debug=web_config.get('app.debug', False),
+            use_reloader=False,
+            allow_unsafe_werkzeug=True
         )
         
-        # Wait a moment to check if the process started successfully
-        time.sleep(3)
-        
-        if web_process.poll() is not None:
-            # Process has already terminated
-            _, stderr = web_process.communicate()
-            print(f"{Colors.FAIL}[!] Failed to start web interface:{Colors.ENDC}")
-            print(stderr)
-            return None
-        
-        print(f"{Colors.OKGREEN}[+] Web Interface started successfully (PID: {web_process.pid}){Colors.ENDC}")
-        return web_process
-        
     except Exception as e:
-        print(f"{Colors.FAIL}[!] Error starting web interface: {e}{Colors.ENDC}")
-        return None
+        logger.error(f"Failed to start web interface: {e}", exc_info=True)
+        shutdown()
+
 
 def open_browser():
-    """Open the default web browser to the web interface."""
-    url = f'http://{HOST}:{PORT}'
-    print(f"{Colors.OKBLUE}[*] Opening web browser to: {url}{Colors.ENDC}")
-    print(f"{Colors.OKBLUE}[*] If the page doesn't load, try: http://localhost:{PORT}{Colors.ENDC}")
+    """Open the default web browser to the application."""
+    web_config = get_web_config()
+    host = web_config.get('app.host', '0.0.0.0')
+    port = web_config.get('app.port', 5000)
+    
+    # Wait for the server to start
+    time.sleep(2)
     
     try:
+        url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}"
         webbrowser.open(url)
-        print(f"{Colors.OKGREEN}[+] Web browser opened successfully{Colors.ENDC}")
+        logger.info(f"Opened web browser to {url}")
     except Exception as e:
-        print(f"{Colors.WARNING}[!] Failed to open web browser: {e}{Colors.ENDC}")
-        print(f"{Colors.OKBLUE}[*] Please open your browser and navigate to: {url}{Colors.ENDC}")
+        logger.warning(f"Could not open web browser: {e}")
+
+
+def signal_handler(sig, frame):
+    """Handle termination signals."""
+    logger.info("Shutdown signal received, shutting down...")
+    shutdown()
+
+
+def shutdown():
+    """Gracefully shut down the application."""
+    global edr_agent, web_thread
+    
+    logger.info("Shutting down...")
+    shutdown_event.set()
+    
+    # Stop the EDR agent if it's running
+    if edr_agent and hasattr(edr_agent, 'stop'):
+        try:
+            logger.info("Stopping EDR agent...")
+            edr_agent.stop()
+        except Exception as e:
+            logger.error(f"Error stopping EDR agent: {e}", exc_info=True)
+    
+    # Stop the web server if it's running
+    if web_thread and web_thread.is_alive():
+        try:
+            logger.info("Stopping web server...")
+            # This is a simple way to stop the Flask development server
+            # In production, you'd want a more robust solution
+            os._exit(0)
+        except Exception as e:
+            logger.error(f"Error stopping web server: {e}", exc_info=True)
+    
+    logger.info("Shutdown complete")
+    sys.exit(0)
+
 
 def main():
-    """Main function to start the EDR agent and web interface."""
-    print_header()
+    """Main entry point for the application."""
+    # Create necessary directories
+    for directory in ['logs', 'data', 'uploads', 'tmp']:
+        os.makedirs(directory, exist_ok=True)
     
-    # Check requirements
-    if not check_requirements():
-        print(f"{Colors.FAIL}[!] Exiting due to missing requirements{Colors.ENDC}")
-        sys.exit(1)
-    
-    # Start EDR agent
-    edr_process = start_edr_agent()
-    if not edr_process:
-        print(f"{Colors.FAIL}[!] Failed to start EDR agent. Exiting...{Colors.ENDC}")
-        sys.exit(1)
-    
-    # Start web interface
-    web_process = start_web_interface()
-    if not web_process:
-        print(f"{Colors.FAIL}[!] Failed to start web interface. Exiting...{Colors.ENDC}")
-        edr_process.terminate()
-        sys.exit(1)
-    
-    # Open browser
-    open_browser()
-    
-    print(f"\n{Colors.OKGREEN}{'='*60}")
-    print(f"{'EDR Agent and Web Interface are running!'.center(60)}")
-    print(f"{'='*60}{Colors.ENDC}")
-    print(f"\n{Colors.BOLD}Access the web interface at:{Colors.ENDC} {Colors.UNDERLINE}http://{HOST}:{PORT}{Colors.ENDC}")
-    print(f"{Colors.BOLD}Default credentials:{Colors.ENDC}")
-    print(f"  - Username: {Colors.OKBLUE}admin{Colors.ENDC}")
-    print(f"  - Password: {Colors.OKBLUE}admin{Colors.ENDC}")
-    print(f"\n{Colors.WARNING}Press Ctrl+C to stop the application...{Colors.ENDC}")
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        # Keep the main thread alive
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print(f"\n{Colors.WARNING}[*] Shutting down...{Colors.ENDC}")
+        # Start the EDR agent in a separate thread
+        edr_thread = threading.Thread(target=start_edr_agent, daemon=True)
+        edr_thread.start()
         
-        # Terminate processes
-        if edr_process:
-            print(f"{Colors.OKBLUE}[*] Stopping EDR Agent...{Colors.ENDC}")
-            edr_process.terminate()
-            try:
-                edr_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                edr_process.kill()
-            print(f"{Colors.OKGREEN}[+] EDR Agent stopped{Colors.ENDC}")
+        # Start the web interface in the main thread
+        # (Flask's reloader doesn't work well in a separate thread)
+        if '--no-browser' not in sys.argv:
+            # Start browser in a separate thread after a short delay
+            threading.Timer(1, open_browser).start()
         
-        if web_process:
-            print(f"{Colors.OKBLUE}[*] Stopping Web Interface...{Colors.ENDC}")
-            web_process.terminate()
-            try:
-                web_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                web_process.kill()
-            print(f"{Colors.OKGREEN}[+] Web Interface stopped{Colors.ENDC}")
+        start_web_interface()
         
-        print(f"\n{Colors.OKGREEN}[+] Application has been stopped{Colors.ENDC}")
-        sys.exit(0)
+    except Exception as e:
+        logger.critical(f"Fatal error: {e}", exc_info=True)
+        shutdown()
+
 
 if __name__ == "__main__":
     main()

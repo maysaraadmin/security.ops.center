@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 from matplotlib.ticker import MaxNLocator
 import numpy as np
-from edr.agent.edr_agent import EDRAgent, EDREvent, EventSeverity, SystemMetrics
+from src.edr.agent.edr_agent import EDRAgent, EDREvent, EventSeverity, SystemMetrics
 
 class EnhancedEDRGUI:
     def __init__(self, root):

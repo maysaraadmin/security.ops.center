@@ -12,9 +12,9 @@ import logging
 from collections import defaultdict
 
 # Local imports
-from edr.threat_detection import ThreatDetector
-from edr.rule_manager import RuleManager
-from edr.rule_editor import RuleManagerUI, RuleEditor
+from src.edr.threat_detection import ThreatDetector
+from src.edr.rule_manager import RuleManager
+from src.edr.rule_editor import RuleManagerUI, RuleEditor
 
 class EDRGUI:
     def __init__(self, root):

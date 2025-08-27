@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 import json
 import logging
 
-from utils.metrics import get_metrics_snapshot, init_metrics, get_metrics_collector, MetricsCollector
+from src.utils.metrics import get_metrics_snapshot, init_metrics, get_metrics_collector, MetricsCollector
 from models.database import Database
 
 logger = logging.getLogger('siem.api.metrics')
