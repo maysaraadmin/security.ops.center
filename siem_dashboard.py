@@ -14,9 +14,26 @@ from flask_socketio import SocketIO, emit
 import psutil
 import platform
 
+# Disable eventlet monkey patching
+import eventlet
+eventlet.monkey_patch(all=False, socket=True, select=True)
+
+# Set the async mode to 'threading' for Windows compatibility
+import os
+os.environ['EVENTLET_MONKEY_PATCH'] = '0'
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use 'threading' async mode and disable WebSocket for better compatibility
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='threading',
+    logger=True,
+    engineio_logger=True,
+    allow_unsafe_werkzeug=True,
+    always_connect=True
+)
 
 # In-memory storage for events (in production, use a database)
 events = []

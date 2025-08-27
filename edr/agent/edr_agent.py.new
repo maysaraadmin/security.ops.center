@@ -1,0 +1,82 @@
+"""
+Enhanced EDR Agent with detection capabilities.
+"""
+import os
+import time
+import logging
+import threading
+import json
+from typing import Dict, List, Optional, Any, Callable
+from pathlib import Path
+from datetime import datetime
+
+class EDREvent:
+    """Basic event class for EDR."""
+    def __init__(self, event_type: str, data: dict):
+        self.event_type = event_type
+        self.data = data
+        self.timestamp = datetime.utcnow()
+        
+    def to_dict(self) -> dict:
+        """Convert event to dictionary."""
+        return {
+            'event_type': self.event_type,
+            'data': self.data,
+            'timestamp': self.timestamp.isoformat()
+        }
+
+class EDRAgent:
+    """Enhanced EDR Agent with basic capabilities."""
+    
+    def __init__(self, config: dict):
+        """Initialize the EDR agent with configuration."""
+        self.config = config
+        self.running = False
+        self.event_queue = []
+        self.event_queue_lock = threading.Lock()
+        self.callbacks = {
+            'threat_detected': [],
+            'event_received': []
+        }
+        self.logger = logging.getLogger('edr.agent')
+        self.logger.info("EDR Agent initialized")
+    
+    def start(self) -> bool:
+        """Start the EDR agent."""
+        self.logger.info("Starting EDR Agent...")
+        self.running = True
+        return True
+    
+    def stop(self) -> bool:
+        """Stop the EDR agent."""
+        self.logger.info("Stopping EDR Agent...")
+        self.running = False
+        return True
+    
+    def register_callback(self, event_type: str, callback: Callable):
+        """Register a callback for a specific event type."""
+        if event_type in self.callbacks:
+            self.callbacks[event_type].append(callback)
+        else:
+            self.logger.warning(f"Unknown event type: {event_type}")
+    
+    def _trigger_callbacks(self, event_type: str, *args, **kwargs):
+        """Trigger all registered callbacks for an event type."""
+        for callback in self.callbacks.get(event_type, []):
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                self.logger.error(f"Error in {event_type} callback: {e}")
+    
+    def submit_event(self, event: EDREvent):
+        """Submit an event to the EDR agent for processing."""
+        with self.event_queue_lock:
+            self.event_queue.append(event)
+        self._trigger_callbacks('event_received', event)
+    
+    def get_queued_events(self) -> List[EDREvent]:
+        """Get all queued events and clear the queue."""
+        with self.event_queue_lock:
+            events = self.event_queue.copy()
+            self.event_queue.clear()
+        return events

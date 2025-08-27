@@ -1,1 +1,16 @@
-""\nEDR Agent - Lightweight endpoint monitoring and response.\n\nThis module provides a cross-platform EDR agent with minimal performance impact.\n"""\n\n__version__ = "1.0.0"\n__all__ = [\n    'EDRAgent',\n    'Platform',\n    'AgentConfig',\n    'SystemInfo',\n]\n\nfrom .agent import EDRAgent\nfrom .models import Platform, AgentConfig, SystemInfo
+"""
+EDR Agent - Lightweight endpoint monitoring and response.
+
+This module provides a cross-platform EDR agent with minimal performance impact.
+"""
+
+__version__ = "1.0.0"
+__all__ = [
+    'EDRAgent',
+    'Platform',
+    'AgentConfig',
+    'SystemInfo',
+]
+
+from .agent import EDRAgent
+from .models import Platform, AgentConfig, SystemInfo

@@ -1,0 +1,228 @@
+{% extends "base_new.html" %}
+
+{% block title %}Login - EDR Agent{% endblock %}
+
+{% block extra_css %}
+<style>
+    body {
+        background-color: #f5f7fb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 1rem;
+    }
+    
+    .login-container {
+        max-width: 400px;
+        width: 100%;
+        margin: 0 auto;
+    }
+    
+    .login-card {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    
+    .login-header {
+        background-color: var(--primary-color);
+        color: white;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    
+    .login-header i {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        display: block;
+    }
+    
+    .login-body {
+        padding: 2rem;
+        background-color: white;
+    }
+    
+    .form-control:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 0.25rem rgba(67, 97, 238, 0.25);
+    }
+    
+    .btn-login {
+        background-color: var(--primary-color);
+        border: none;
+        padding: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .btn-login:hover {
+        background-color: var(--secondary-color);
+    }
+    
+    .login-footer {
+        text-align: center;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-top: 1px solid #eee;
+    }
+    
+    #loginForm .form-floating:focus-within {
+        z-index: 2;
+    }
+    
+    #loginForm input[type="text"] {
+        margin-bottom: -1px;
+        border-bottom-right-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+    
+    #loginForm input[type="password"] {
+        margin-bottom: 1rem;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <i class="bi bi-shield-lock"></i>
+            <h4 class="mb-0">EDR Agent</h4>
+            <p class="mb-0">Sign in to your account</p>
+        </div>
+        
+        <div class="login-body">
+            <form id="loginForm" action="{{ url_for('login') }}" method="POST" novalidate>
+                <div id="error-message" class="alert alert-danger d-none" role="alert">
+                    Invalid username or password. Please try again.
+                </div>
+                
+                <div class="form-floating mb-3">
+                    <input type="text" class="form-control" id="username" name="username" 
+                           placeholder="Username" required autofocus>
+                    <label for="username">Username</label>
+                    <div class="invalid-feedback">
+                        Please enter your username.
+                    </div>
+                </div>
+                
+                <div class="form-floating mb-4">
+                    <input type="password" class="form-control" id="password" name="password" 
+                           placeholder="Password" required>
+                    <label for="password">Password</label>
+                    <div class="invalid-feedback">
+                        Please enter your password.
+                    </div>
+                </div>
+                
+                <div class="d-grid">
+                    <button class="btn btn-primary btn-login btn-lg" type="submit">
+                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                        <span class="btn-text">Sign In</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <div class="login-footer">
+            <p class="mb-0 text-muted small">
+                &copy; 2025 EDR Agent. All rights reserved.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const loginForm = document.getElementById('loginForm');
+    const errorMessage = document.getElementById('error-message');
+    const submitBtn = loginForm.querySelector('button[type="submit"]');
+    const spinner = submitBtn.querySelector('.spinner-border');
+    const btnText = submitBtn.querySelector('.btn-text');
+    
+    loginForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Reset form validation
+        loginForm.classList.remove('was-validated');
+        errorMessage.classList.add('d-none');
+        
+        // Check form validity
+        if (!loginForm.checkValidity()) {
+            e.stopPropagation();
+            loginForm.classList.add('was-validated');
+            return;
+        }
+        
+        // Show loading state
+        submitBtn.disabled = true;
+        spinner.classList.remove('d-none');
+        btnText.textContent = 'Signing in...';
+        
+        // Get form data
+        const formData = new FormData(loginForm);
+        
+        // Send login request
+        fetch(loginForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Redirect on successful login
+                window.location.href = data.redirect || '/';
+            } else {
+                // Show error message
+                errorMessage.textContent = data.message || 'Invalid username or password. Please try again.';
+                errorMessage.classList.remove('d-none');
+                
+                // Shake animation for error
+                loginForm.classList.add('shake');
+                setTimeout(() => {
+                    loginForm.classList.remove('shake');
+                }, 500);
+                
+                // Focus on username field
+                document.getElementById('username').focus();
+            }
+        })
+        .catch(error => {
+            console.error('Login error:', error);
+            errorMessage.textContent = 'An error occurred. Please try again later.';
+            errorMessage.classList.remove('d-none');
+        })
+        .finally(() => {
+            // Reset button state
+            submitBtn.disabled = false;
+            spinner.classList.add('d-none');
+            btnText.textContent = 'Sign In';
+        });
+    });
+    
+    // Clear error when typing
+    const inputs = loginForm.querySelectorAll('input');
+    inputs.forEach(input => {
+        input.addEventListener('input', () => {
+            if (errorMessage && !errorMessage.classList.contains('d-none')) {
+                errorMessage.classList.add('d-none');
+            }
+        });
+    });
+    
+    // Auto-focus username field
+    document.getElementById('username').focus();
+});
+</script>
+{% endblock %}

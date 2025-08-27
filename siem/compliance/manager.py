@@ -10,7 +10,7 @@ from pathlib import Path
 import json
 
 from .base import ComplianceReport, AuditLogger
-from .reports import GDPRReport, HIPAAResponse, PCIDSSReport, SOXReport
+from .reports import GDPRReport, HIPAAResponse, PCIDSSReport, SOXReport, ISO27001Report
 
 # Type variable for ComplianceReport subclasses
 ReportClass = TypeVar('ReportClass', bound=ComplianceReport)
@@ -23,7 +23,8 @@ class ComplianceManager:
         'gdpr': GDPRReport,
         'hipaa': HIPAAResponse,
         'pcidss': PCIDSSReport,
-        'sox': SOXReport
+        'sox': SOXReport,
+        'iso27001': ISO27001Report
     }
     
     def __init__(self, config: Dict[str, Any] = None):

@@ -1,4 +1,4 @@
-""
+"""
 EDR Agent - Data collectors for system monitoring.
 
 This module provides platform-specific collectors for gathering system data

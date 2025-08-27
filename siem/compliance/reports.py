@@ -1,5 +1,5 @@
 """
-Compliance reports for various regulations (GDPR, HIPAA, PCI-DSS, SOX).
+Compliance reports for various regulations (GDPR, HIPAA, PCI-DSS, SOX, ISO27001).
 """
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
@@ -7,6 +7,14 @@ import logging
 from pathlib import Path
 
 from .base import ComplianceReport, AuditLogger
+from typing import Dict, Any, List, Optional, Type, TypeVar
+from datetime import datetime, timedelta
+import logging
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
+import logging
+from pathlib import Path
 
 class GDPRReport(ComplianceReport):
     """Generates GDPR compliance reports."""
@@ -378,6 +386,109 @@ class PCIDSSReport(ComplianceReport):
             'medium_vulnerabilities': 12,
             'low_vulnerabilities': 8,
             'last_scan_date': (datetime.utcnow() - timedelta(days=1)).isoformat() + 'Z'
+        }
+
+
+class ISO27001Report(ComplianceReport):
+    """Generates ISO 27001 compliance reports for information security management."""
+    
+    def _setup(self) -> None:
+        """Set up ISO 27001 specific configurations."""
+        self.logger = logging.getLogger("siem.compliance.iso27001")
+        self.audit_logger = AuditLogger(self.config.get('audit_config', {}))
+        
+    def generate(self, start_time: datetime, end_time: datetime) -> Dict[str, Any]:
+        """Generate an ISO 27001 compliance report."""
+        self.logger.info(f"Generating ISO 27001 report for {start_time} to {end_time}")
+        
+        # Query relevant events
+        security_events = self._query_security_events(start_time, end_time)
+        access_events = self._query_access_events(start_time, end_time)
+        risk_events = self._query_risk_assessment_events(start_time, end_time)
+        
+        # Generate report
+        report = {
+            'report_id': self.report_id,
+            'name': self.name,
+            'description': 'ISO 27001:2022 Compliance Report',
+            'standard': 'ISO/IEC 27001:2022',
+            'period': {
+                'start': start_time.isoformat(),
+                'end': end_time.isoformat()
+            },
+            'generated_at': datetime.utcnow().isoformat() + 'Z',
+            'sections': [
+                self._generate_security_controls_summary(security_events),
+                self._generate_access_control_summary(access_events),
+                self._generate_risk_assessment_summary(risk_events),
+                self._generate_incident_response_summary(start_time, end_time)
+            ]
+        }
+        
+        # Save the report
+        self.save_report(report)
+        return report
+    
+    def _query_security_events(self, start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """Query security events relevant to ISO 27001 controls."""
+        # This would typically query your SIEM or logging system
+        return []
+    
+    def _query_access_events(self, start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """Query access control events."""
+        # This would typically query your authentication/authorization logs
+        return []
+    
+    def _query_risk_assessment_events(self, start_time: datetime, end_time: datetime) -> List[Dict[str, Any]]:
+        """Query risk assessment and treatment events."""
+        # This would query your risk management system or logs
+        return []
+    
+    def _generate_security_controls_summary(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate summary of security controls."""
+        return {
+            'section': 'Security Controls',
+            'summary': 'Summary of implemented security controls',
+            'controls': [
+                {'control': 'A.5.1', 'name': 'Information Security Policies', 'status': 'Implemented'},
+                {'control': 'A.5.2', 'name': 'Information Security Roles', 'status': 'Implemented'},
+                # Add more controls as needed
+            ]
+        }
+    
+    def _generate_access_control_summary(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate summary of access control events."""
+        return {
+            'section': 'Access Control',
+            'summary': 'Summary of access control events',
+            'total_events': len(events),
+            'unique_users': len(set(e.get('user', '') for e in events if 'user' in e)),
+            'failed_attempts': len([e for e in events if e.get('status') == 'failure'])
+        }
+    
+    def _generate_risk_assessment_summary(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate summary of risk assessment."""
+        return {
+            'section': 'Risk Assessment',
+            'summary': 'Summary of risk assessment activities',
+            'total_risks_identified': len(events),
+            'risks_by_severity': {
+                'high': len([e for e in events if e.get('severity') == 'high']),
+                'medium': len([e for e in events if e.get('severity') == 'medium']),
+                'low': len([e for e in events if e.get('severity') == 'low'])
+            }
+        }
+    
+    def _generate_incident_response_summary(self, start_time: datetime, end_time: datetime) -> Dict[str, Any]:
+        """Generate summary of incident response activities."""
+        return {
+            'section': 'Incident Response',
+            'summary': 'Summary of security incidents and responses',
+            'period': {
+                'start': start_time.isoformat(),
+                'end': end_time.isoformat()
+            },
+            'incidents': []
         }
 
 

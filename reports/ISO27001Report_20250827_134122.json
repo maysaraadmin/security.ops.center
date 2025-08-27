@@ -1,0 +1,55 @@
+{
+  "report_id": "ISO27001Report",
+  "name": "ISO27001Report",
+  "description": "ISO 27001:2022 Compliance Report",
+  "standard": "ISO/IEC 27001:2022",
+  "period": {
+    "start": "2023-01-01T00:00:00",
+    "end": "2023-01-31T00:00:00"
+  },
+  "generated_at": "2025-08-27T13:41:22.017282Z",
+  "sections": [
+    {
+      "section": "Security Controls",
+      "summary": "Summary of implemented security controls",
+      "controls": [
+        {
+          "control": "A.5.1",
+          "name": "Information Security Policies",
+          "status": "Implemented"
+        },
+        {
+          "control": "A.5.2",
+          "name": "Information Security Roles",
+          "status": "Implemented"
+        }
+      ]
+    },
+    {
+      "section": "Access Control",
+      "summary": "Summary of access control events",
+      "total_events": 0,
+      "unique_users": 0,
+      "failed_attempts": 0
+    },
+    {
+      "section": "Risk Assessment",
+      "summary": "Summary of risk assessment activities",
+      "total_risks_identified": 0,
+      "risks_by_severity": {
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      }
+    },
+    {
+      "section": "Incident Response",
+      "summary": "Summary of security incidents and responses",
+      "period": {
+        "start": "2023-01-01T00:00:00",
+        "end": "2023-01-31T00:00:00"
+      },
+      "incidents": []
+    }
+  ]
+}
