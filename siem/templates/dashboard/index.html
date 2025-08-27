@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified SIEM Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+        .card {
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .metric-card {
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            transition: transform 0.2s;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
+        }
+        .metric-icon {
+            padding: 0.75rem;
+            border-radius: 9999px;
+            color: white;
+            margin-right: 1rem;
+        }
+        .event-log {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .severity-high {
+            background-color: #FEE2E2;
+            color: #991B1B;
+        }
+        .severity-medium {
+            background-color: #FEF3C7;
+            color: #92400E;
+        }
+        .severity-low {
+            background-color: #DBEAFE;
+            color: #1E40AF;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-gray-900 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-shield-alt text-2xl text-blue-400"></i>
+                <h1 class="text-xl font-bold">Unified SIEM Dashboard</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm text-gray-300">Welcome, <span id="username-display" class="font-medium">Guest</span></span>
+                    <span id="user-role" class="px-2 py-1 text-xs rounded-full bg-blue-600 text-white">Role</span>
+                </div>
+                <span id="last-updated" class="text-sm text-gray-400">Last updated: Just now</span>
+                <a href="/logout" class="text-sm text-red-400 hover:text-red-300 ml-2">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+            <!-- Total Events -->
+            <div class="metric-card">
+                <div class="metric-icon bg-blue-500">
+                    <i class="fas fa-bell text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-gray-500 text-sm">Total Events</p>
+                    <h3 id="total-events" class="text-2xl font-bold">0</h3>
+                </div>
+            </div>
+
+            <!-- CPU Usage -->
+            <div class="metric-card">
+                <div class="metric-icon bg-green-500">
+                    <i class="fas fa-microchip text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-gray-500 text-sm">CPU Usage</p>
+                    <h3 id="cpu-usage" class="text-2xl font-bold">0%</h3>
+                </div>
+            </div>
+
+            <!-- Memory Usage -->
+            <div class="metric-card">
+                <div class="metric-icon bg-purple-500">
+                    <i class="fas fa-memory text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-gray-500 text-sm">Memory Usage</p>
+                    <h3 id="memory-usage" class="text-2xl font-bold">0%</h3>
+                </div>
+            </div>
+
+            <!-- Disk Usage -->
+            <div class="metric-card">
+                <div class="metric-icon bg-yellow-500">
+                    <i class="fas fa-hdd text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-gray-500 text-sm">Disk Usage</p>
+                    <h3 id="disk-usage" class="text-2xl font-bold">0%</h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- Events by Type -->
+            <div class="card col-span-2">
+                <h2 class="text-xl font-semibold mb-4">Events by Type</h2>
+                <div class="h-64">
+                    <canvas id="events-by-type"></canvas>
+                </div>
+            </div>
+
+            <!-- Severity Distribution -->
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4">Severity Distribution</h2>
+                <div class="h-64">
+                    <canvas id="severity-distribution"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Recent Events</h2>
+                <div class="flex space-x-2">
+                    <button id="refresh-events" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="event-log">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
+                        </tr>
+                    </thead>
+                    <tbody id="event-log-body" class="bg-white divide-y divide-gray-200">
+                        <!-- Events will be populated by JavaScript -->
+                        <tr>
+                            <td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading events...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+        
+        // User information
+        let currentUser = {
+            username: '{{ username|default("Guest") }}',
+            role: '{{ role|default("guest") }}'
+        };
+        
+        // Update UI based on user role
+        function updateUIForUser() {
+            // Update user info display
+            document.getElementById('username-display').textContent = currentUser.username;
+            const roleBadge = document.getElementById('user-role');
+            roleBadge.textContent = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
+            
+            // Show/hide admin-only elements
+            document.querySelectorAll('.admin-only').forEach(el => {
+                el.style.display = currentUser.role === 'admin' ? 'block' : 'none';
+            });
+            
+            // Show/hide analyst-only elements
+            document.querySelectorAll('.analyst-only').forEach(el => {
+                el.style.display = ['admin', 'analyst'].includes(currentUser.role) ? 'block' : 'none';
+            });
+            
+            // Update any other UI elements based on role
+            if (currentUser.role === 'guest') {
+                // Redirect to login if not authenticated
+                window.location.href = '/login';
+            }
+        }
+        
+        // Handle redirects from server
+        socket.on('redirect', function(data) {
+            window.location.href = data.url;
+        });
+        
+        // Charts
+        let eventsByTypeChart, severityDistributionChart;
+        
+        // Initialize charts
+        function initCharts() {
+            // Events by Type Chart
+            const eventsByTypeCtx = document.getElementById('events-by-type').getContext('2d');
+            eventsByTypeChart = new Chart(eventsByTypeCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Events by Type',
+                        data: [],
+                        backgroundColor: [
+                            'rgba(54, 162, 235, 0.6)',
+                            'rgba(255, 99, 132, 0.6)',
+                            'rgba(75, 192, 192, 0.6)',
+                            'rgba(255, 159, 64, 0.6)',
+                            'rgba(153, 102, 255, 0.6)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Severity Distribution Chart
+            const severityCtx = document.getElementById('severity-distribution').getContext('2d');
+            severityDistributionChart = new Chart(severityCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['High', 'Medium', 'Low'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: [
+                            'rgba(239, 68, 68, 0.6)',  // red-500
+                            'rgba(234, 179, 8, 0.6)',  // yellow-500
+                            'rgba(59, 130, 246, 0.6)'  // blue-500
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update charts with new data
+        function updateCharts(data) {
+            // Update events by type
+            const eventTypes = Object.keys(data.metrics.events.by_type);
+            const eventCounts = eventTypes.map(type => data.metrics.events.by_type[type]);
+            
+            eventsByTypeChart.data.labels = eventTypes;
+            eventsByTypeChart.data.datasets[0].data = eventCounts;
+            eventsByTypeChart.update();
+            
+            // Update severity distribution
+            const severityData = [
+                data.metrics.events.by_severity.high || 0,
+                data.metrics.events.by_severity.medium || 0,
+                data.metrics.events.by_severity.low || 0
+            ];
+            
+            severityDistributionChart.data.datasets[0].data = severityData;
+            severityDistributionChart.update();
+        }
+        
+        // Update metrics display
+        function updateMetrics(data) {
+            // System metrics
+            document.getElementById('total-events').textContent = data.metrics.events.total;
+            document.getElementById('cpu-usage').textContent = `${data.metrics.system.cpu || 0}%`;
+            document.getElementById('memory-usage').textContent = `${data.metrics.system.memory || 0}%`;
+            document.getElementById('disk-usage').textContent = `${data.metrics.system.disk || 0}%`;
+            
+            // Last updated time
+            const updatedAt = new Date(data.last_updated);
+            document.getElementById('last-updated').textContent = `Last updated: ${updatedAt.toLocaleTimeString()}`;
+        }
+        
+        // Update event log
+        function updateEventLog(events) {
+            const tbody = document.getElementById('event-log-body');
+            if (!events || events.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">No events found</td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = events.map(event => {
+                // Map event ID to severity
+                let severity = 'low';
+                let severityClass = 'severity-low';
+                
+                if (['1', '5', '7', '8', '10', '11'].includes(String(event.event_id))) {
+                    severity = 'high';
+                    severityClass = 'severity-high';
+                } else if (['2', '3', '12', '13', '14', '15'].includes(String(event.event_id))) {
+                    severity = 'medium';
+                    severityClass = 'severity-medium';
+                }
+                
+                // Format time
+                const eventTime = new Date(event.time_generated);
+                const timeString = eventTime.toLocaleTimeString();
+                
+                // Get event details
+                const details = event.data ? event.data.join(' | ') : 'No details';
+                
+                return `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${timeString}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${event.event_id || 'N/A'}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${event.source_name || 'Unknown'}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">${details.substring(0, 100)}${details.length > 100 ? '...' : ''}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${severityClass}">
+                                ${severity.charAt(0).toUpperCase() + severity.slice(1)}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        // Handle refresh button click
+        document.getElementById('refresh-events').addEventListener('click', () => {
+            fetch('/api/events')
+                .then(response => response.json())
+                .then(data => {
+                    updateEventLog(data.events);
+                    updateCharts(data);
+                    updateMetrics(data);
+                });
+        });
+        
+        // Socket.IO event listeners
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+        });
+        
+        socket.on('data_update', (data) => {
+            console.log('Received data update:', data);
+            updateMetrics(data);
+            updateCharts(data);
+            updateEventLog(data.events);
+        });
+        
+        // Initialize the dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            // Update UI based on user role
+            updateUIForUser();
+            
+            // Initialize charts
+            initCharts();
+            
+            // Load initial data
+            fetch('/api/events')
+                .then(response => {
+                    if (response.status === 401) {
+                        // Unauthorized, redirect to login
+                        window.location.href = '/login';
+                        return Promise.reject('Unauthorized');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update user info from server response
+                    if (data.user) {
+                        currentUser = data.user;
+                        updateUIForUser();
+                    }
+                    
+                    updateEventLog(data.events);
+                    updateCharts(data);
+                    updateMetrics(data);
+                })
+                .catch(error => {
+                    console.error('Error loading dashboard data:', error);
+                    if (error !== 'Unauthorized') {
+                        alert('Error loading dashboard data. Please try again or contact support.');
+                    }
+                });
+        });
+    </script>
+</body>
+</html>

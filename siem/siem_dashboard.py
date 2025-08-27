@@ -1,424 +1,396 @@
 """
-Enhanced SIEM Dashboard with Sysmon Events
+Unified SIEM Dashboard
+
+A comprehensive dashboard that combines all SIEM monitoring and management features.
 """
 import os
 import sys
-import time
 import json
+import logging
 import threading
 from datetime import datetime, timedelta
-import win32evtlog
-import win32con
-from flask import Flask, render_template_string, jsonify, Response
+from flask import Flask, render_template, jsonify, request, send_from_directory, session, flash, redirect, url_for
+from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+from functools import wraps
+import os
 import psutil
 import platform
+import win32evtlog
+import win32con
 
-# Disable eventlet monkey patching
-import eventlet
-eventlet.monkey_patch(all=False, socket=True, select=True)
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('siem_dashboard.log')
+    ]
+)
+logger = logging.getLogger(__name__)
 
-# Set the async mode to 'threading' for Windows compatibility
-import os
-os.environ['EVENTLET_MONKEY_PATCH'] = '0'
+# Initialize Flask app
+app = Flask(__name__, 
+            static_folder='static',
+            template_folder='templates')
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-# Use 'threading' async mode and disable WebSocket for better compatibility
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    async_mode='threading',
-    logger=True,
-    engineio_logger=True,
-    allow_unsafe_werkzeug=True,
-    always_connect=True
+# Load configuration
+app.config.update(
+    SECRET_KEY=os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-this-in-production'),
+    PERMANENT_SESSION_LIFETIME=3600  # 1 hour session lifetime
 )
 
-# In-memory storage for events (in production, use a database)
-events = []
-stats = {
-    'total_events': 0,
-    'event_types': {},
-    'sources': {},
-    'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-    'host_info': {}
-}
+# Initialize extensions
+CORS(app)
+# Use 'threading' async_mode for better compatibility
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# Import and initialize authentication
+from siem.auth import login_required, role_required, init_auth, login, logout
+
+# Register authentication routes
+app.add_url_rule('/login', 'login', login, methods=['GET', 'POST'])
+app.add_url_rule('/logout', 'logout', logout)
+
+# In-memory storage for dashboard data
+class DashboardData:
+    def __init__(self):
+        self.events = []
+        self.metrics = {
+            'system': {},
+            'events': {
+                'total': 0,
+                'by_type': {},
+                'by_severity': {}
+            },
+            'performance': {
+                'cpu': 0,
+                'memory': 0,
+                'disk': 0,
+                'network': 0
+            }
+        }
+        self.last_updated = datetime.now()
+
+# Initialize dashboard data
+dashboard_data = DashboardData()
+
+# Utility Functions
 def get_system_info():
-    """Get system information."""
-    return {
-        'system': platform.system(),
-        'node': platform.node(),
-        'release': platform.release(),
-        'version': platform.version(),
-        'machine': platform.machine(),
-        'processor': platform.processor(),
-        'cpu_percent': psutil.cpu_percent(),
-        'memory_percent': psutil.virtual_memory().percent,
-        'boot_time': datetime.fromtimestamp(psutil.boot_time()).strftime('%Y-%m-%d %H:%M:%S')
-    }
+    """Collect system information."""
+    try:
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        return {
+            'cpu': cpu_percent,
+            'memory': memory.percent,
+            'disk': disk.percent,
+            'boot_time': datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S"),
+            'os': f"{platform.system()} {platform.release()}",
+            'hostname': platform.node(),
+            'python': platform.python_version()
+        }
+    except Exception as e:
+        logger.error(f"Error getting system info: {e}")
+        return {}
 
 def get_sysmon_events(limit=100):
     """Fetch Sysmon events from Windows Event Log."""
+    events = []
+    hand = None
+    
     try:
-        hand = win32evtlog.OpenEventLog(None, 'Microsoft-Windows-Sysmon/Operational')
-        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
-        
-        events = []
-        count = 0
-        
-        while count < limit:
-            results = win32evtlog.ReadEventLog(hand, flags, 0)
-            if not results:
-                break
+        # Try to open Sysmon log
+        try:
+            hand = win32evtlog.OpenEventLog(None, 'Microsoft-Windows-Sysmon/Operational')
+            flags = win32evtlog.EVENTLOG_BACKWARDS_READ|win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            
+            try:
+                total = win32evtlog.GetNumberOfEventLogRecords(hand)
+                logger.info(f"Found {total} Sysmon events in the log")
+            except Exception as e:
+                logger.warning(f"Could not get total number of events: {e}")
+                total = 0
                 
-            for event in results:
-                if count >= limit:
+            events_read = 0
+            while events_read < limit:
+                try:
+                    events_batch = win32evtlog.ReadEventLog(hand, flags, 0)
+                    if not events_batch:
+                        break
+                        
+                    for event in events_batch:
+                        if events_read >= limit:
+                            break
+                            
+                        try:
+                            event_time = event.TimeGenerated
+                            event_data = {
+                                'event_id': event.EventID,
+                                'time_generated': event_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                'source_name': 'Sysmon',
+                                'level': 'low',
+                                'message': event.StringInserts[0] if event.StringInserts and len(event.StringInserts) > 0 else 'No message',
+                                'data': [str(item) for item in event.StringInserts] if event.StringInserts else []
+                            }
+                            
+                            # Set severity based on event ID
+                            if event.EventID in [1, 5, 7, 8, 10, 11]:
+                                event_data['level'] = 'high'
+                            elif event.EventID in [2, 3, 12, 13, 14, 15]:
+                                event_data['level'] = 'medium'
+                                
+                            events.append(event_data)
+                            events_read += 1
+                            
+                        except Exception as e:
+                            logger.warning(f"Error processing event: {e}")
+                            continue
+                            
+                except Exception as e:
+                    logger.error(f"Error reading events: {e}")
                     break
                     
-                event_data = {
-                    'id': count + 1,
-                    'timestamp': event.TimeGenerated.Format(),
-                    'event_id': event.EventID,
-                    'source': event.SourceName,
-                    'computer': event.ComputerName,
-                    'level': 'info',
-                    'data': []
-                }
-                
-                # Add event type to stats
-                event_type = f'Event {event.EventID}'
-                stats['event_types'][event_type] = stats['event_types'].get(event_type, 0) + 1
-                
-                # Add source to stats
-                stats['sources'][event.SourceName] = stats['sources'].get(event.SourceName, 0) + 1
-                
-                # Set event level based on ID (customize as needed)
-                if event.EventID in [1, 8, 10]:  # Process creation, CreateRemoteThread, ProcessAccess
-                    event_data['level'] = 'warning'
-                elif event.EventID in [3, 11, 12, 13, 14]:  # Network connection, File create, Registry events
-                    event_data['level'] = 'info'
-                else:
-                    event_data['level'] = 'debug'
-                
-                if event.StringInserts:
-                    event_data['data'] = [str(item) for item in event.StringInserts]
-                
-                events.append(event_data)
-                count += 1
-                
-        return events
-        
-    except Exception as e:
-        print(f"Error reading Sysmon events: {e}")
-        return []
-    finally:
-        if 'hand' in locals():
-            win32evtlog.CloseEventLog(hand)
-
-def background_thread():
-    """Background thread to update events periodically."""
-    global events, stats
-    
-    while True:
-        try:
-            new_events = get_sysmon_events(50)  # Get last 50 events
-            if new_events:
-                events = new_events
-                stats['total_events'] = len(events)
-                stats['host_info'] = get_system_info()
-                
-                # Emit update to all connected clients
-                socketio.emit('update', {
-                    'events': events[-10:],  # Send only the 10 most recent events
-                    'stats': stats
+        except Exception as e:
+            logger.error(f"Could not open Sysmon event log: {e}")
+            
+            # Fallback to sample data if Sysmon is not available
+            logger.info("Generating sample event data")
+            event_types = ['Process Create', 'Network Connect', 'File Create', 'Registry Event']
+            for i in range(min(limit, 10)):  # Limit to 10 sample events
+                event_time = datetime.now() - timedelta(minutes=i)
+                events.append({
+                    'event_id': random.choice([1, 3, 5, 7, 10, 11]),
+                    'time_generated': event_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'source_name': 'Sample Data',
+                    'level': random.choice(['low', 'medium', 'high']),
+                    'message': f"Sample {random.choice(event_types)} event",
+                    'data': [f"Sample {random.choice(event_types)} event", f"Details {i+1}"]
                 })
                 
-        except Exception as e:
-            print(f"Error in background thread: {e}")
-            
-        time.sleep(5)  # Update every 5 seconds
-
-# HTML template for the dashboard
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIEM Dashboard - Sysmon Events</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <style>
-        .event-warning { border-left: 4px solid #f59e0b; }
-        .event-info { border-left: 4px solid #3b82f6; }
-        .event-debug { border-left: 4px solid #6b7280; }
-        .blink {
-            animation: blinker 1s linear infinite;
-        }
-        @keyframes blinker {
-            50% { opacity: 0.5; }
-        }
-        .event-card {
-            transition: all 0.3s ease;
-        }
-        .event-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-    </style>
-</head>
-<body class="bg-gray-100">
-    <!-- Header -->
-    <header class="bg-gray-900 text-white shadow-lg">
-        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i class="fas fa-shield-alt text-blue-400 text-2xl"></i>
-                <h1 class="text-xl font-bold">SIEM Dashboard</h1>
-            </div>
-            <div class="flex items-center space-x-4">
-                <span class="text-sm text-gray-300">Last updated: <span id="last-updated">Just now</span></span>
-                <button onclick="location.reload()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">
-                    <i class="fas fa-sync-alt mr-1"></i> Refresh
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <div class="container mx-auto px-4 py-6">
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            <!-- Total Events -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-blue-100 text-blue-600 mr-4">
-                        <i class="fas fa-chart-bar text-xl"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">Total Events</p>
-                        <h3 class="text-2xl font-bold" id="total-events">0</h3>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Event Types -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-green-100 text-green-600 mr-4">
-                        <i class="fas fa-tags text-xl"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">Event Types</p>
-                        <h3 class="text-2xl font-bold" id="event-types">0</h3>
-                    </div>
-                </div>
-            </div>
-
-            <!-- System Status -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-purple-100 text-purple-600 mr-4">
-                        <i class="fas fa-server text-xl"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">CPU Usage</p>
-                        <h3 class="text-2xl font-bold" id="cpu-usage">0%</h3>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Memory Usage -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center">
-                    <div class="p-3 rounded-full bg-yellow-100 text-yellow-600 mr-4">
-                        <i class="fas fa-memory text-xl"></i>
-                    </div>
-                    <div>
-                        <p class="text-gray-500 text-sm">Memory Usage</p>
-                        <h3 class="text-2xl font-bold" id="memory-usage">0%</h3>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Events List -->
-            <div class="lg:col-span-2">
-                <div class="bg-white rounded-lg shadow overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h2 class="text-lg font-semibold text-gray-800">Recent Events</h2>
-                    </div>
-                    <div class="divide-y divide-gray-200" id="events-list" style="max-height: 600px; overflow-y: auto;">
-                        <!-- Events will be inserted here by JavaScript -->
-                        <div class="p-4 text-center text-gray-500">
-                            <i class="fas fa-spinner fa-spin mr-2"></i> Loading events...
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Event Types Chart -->
-            <div class="space-y-6">
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Event Types</h2>
-                    <div class="h-64">
-                        <canvas id="eventTypesChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- System Info -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">System Information</h2>
-                    <div class="space-y-2 text-sm" id="system-info">
-                        <div class="flex justify-between">
-                            <span class="text-gray-500">Host:</span>
-                            <span id="host-name">Loading...</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-500">OS:</span>
-                            <span id="os-info">Loading...</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-500">Uptime:</span>
-                            <span id="uptime">Loading...</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Connect to WebSocket
-        const socket = io();
+    except Exception as e:
+        logger.error(f"Unexpected error in get_sysmon_events: {e}")
         
-        // Event Types Chart
-        const eventTypesCtx = document.getElementById('eventTypesChart').getContext('2d');
-        const eventTypesChart = new Chart(eventTypesCtx, {
-            type: 'doughnut',
-            data: {
-                labels: [],
-                datasets: [{
-                    data: [],
-                    backgroundColor: [
-                        '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-                        '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'
-                    ]
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom'
-                    }
-                }
-            }
-        });
+        # Generate some sample data in case of any error
+        event_types = ['Process Create', 'Network Connect', 'File Create', 'Registry Event']
+        for i in range(min(limit, 5)):  # Generate 5 sample events
+            event_time = datetime.now() - timedelta(minutes=i)
+            events.append({
+                'event_id': random.choice([1, 3, 5, 7, 10, 11]),
+                'time_generated': event_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'source_name': 'Sample Data',
+                'level': random.choice(['low', 'medium', 'high']),
+                'message': f"Sample {random.choice(event_types)} event",
+                'data': [f"Sample {random.choice(event_types)} event", f"Details {i+1}"]
+            })
+    finally:
+        if hand:
+            try:
+                win32evtlog.CloseEventLog(hand)
+            except Exception as e:
+                logger.error(f"Error closing event log: {e}")
+    
+    return events
 
-        // Update dashboard with new data
-        socket.on('update', function(data) {
-            // Update last updated time
-            document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+def update_dashboard_data():
+    """Update dashboard data with latest information."""
+    try:
+        # Update system metrics
+        dashboard_data.metrics['system'] = get_system_info()
+        
+        # Get latest events
+        events = get_sysmon_events(limit=50)
+        dashboard_data.events = events
+        
+        # Update event statistics
+        dashboard_data.metrics['events']['total'] = len(events)
+        
+        # Count events by type and severity
+        type_counts = {}
+        severity_counts = {}
+        
+        for event in events:
+            event_type = event.get('source_name', 'unknown')
+            type_counts[event_type] = type_counts.get(event_type, 0) + 1
             
-            // Update stats
-            document.getElementById('total-events').textContent = data.stats.total_events;
-            document.getElementById('event-types').textContent = Object.keys(data.stats.event_types).length;
-            
-            // Update system info
-            if (data.stats.host_info) {
-                const hi = data.stats.host_info;
-                document.getElementById('host-name').textContent = hi.node || 'N/A';
-                document.getElementById('os-info').textContent = `${hi.system || ''} ${hi.release || ''}`.trim();
-                document.getElementById('cpu-usage').textContent = `${hi.cpu_percent || 0}%`;
-                document.getElementById('memory-usage').textContent = `${hi.memory_percent || 0}%`;
-            }
-            
-            // Update events list
-            const eventsList = document.getElementById('events-list');
-            if (data.events && data.events.length > 0) {
-                eventsList.innerHTML = data.events.map(event => `
-                    <div class="event-card p-4 hover:bg-gray-50 event-${event.level}">
-                        <div class="flex justify-between items-start">
-                            <div class="flex-1">
-                                <div class="flex items-center mb-1">
-                                    <span class="font-semibold text-gray-900 mr-2">${event.source}</span>
-                                    <span class="text-xs px-2 py-1 rounded-full ${
-                                        event.level === 'warning' ? 'bg-yellow-100 text-yellow-800' : 
-                                        event.level === 'info' ? 'bg-blue-100 text-blue-800' : 
-                                        'bg-gray-100 text-gray-800'
-                                    }">
-                                        Event ${event.event_id}
-                                    </span>
-                                </div>
-                                <div class="text-sm text-gray-600 mb-2">
-                                    ${event.data ? event.data.join('<br>') : 'No data'}
-                                </div>
-                                <div class="text-xs text-gray-400">
-                                    <i class="far fa-clock mr-1"></i> ${event.timestamp}
-                                    <span class="mx-2">•</span>
-                                    <i class="fas fa-desktop mr-1"></i> ${event.computer}
-                                </div>
-                            </div>
-                            <div class="ml-4">
-                                <span class="inline-block w-3 h-3 rounded-full ${
-                                    event.level === 'warning' ? 'bg-yellow-400' : 
-                                    event.level === 'info' ? 'bg-blue-400' : 'bg-gray-400'
-                                }" title="${event.level}"></span>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            }
-            
-            // Update event types chart
-            if (data.stats.event_types) {
-                const eventTypes = Object.entries(data.stats.event_types)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 5);
+            # Map event IDs to severity levels (simplified)
+            event_id = str(event.get('event_id', 0))
+            if event_id in ['1', '5', '7', '8', '10', '11']:
+                severity = 'high'
+            elif event_id in ['2', '3', '12', '13', '14', '15']:
+                severity = 'medium'
+            else:
+                severity = 'low'
                 
-                eventTypesChart.data.labels = eventTypes.map(e => e[0]);
-                eventTypesChart.data.datasets[0].data = eventTypes.map(e => e[1]);
-                eventTypesChart.update();
-            }
-        });
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        
+        dashboard_data.metrics['events']['by_type'] = type_counts
+        dashboard_data.metrics['events']['by_severity'] = severity_counts
+        dashboard_data.last_updated = datetime.now()
+        
+    except Exception as e:
+        logger.error(f"Error updating dashboard data: {e}")
 
-        // Handle errors
-        socket.on('connect_error', (error) => {
-            console.error('Connection Error:', error);
-        });
-    </script>
-</body>
-</html>
-"""
+# Background thread to update data
+def background_thread():
+    """Background thread to update dashboard data periodically."""
+    while True:
+        try:
+            update_dashboard_data()
+            # Emit update to all connected clients
+            socketio.emit('data_update', {
+                'metrics': dashboard_data.metrics,
+                'last_updated': dashboard_data.last_updated.isoformat()
+            })
+            socketio.sleep(5)  # Update every 5 seconds
+        except Exception as e:
+            logger.error(f"Error in background thread: {e}")
+            socketio.sleep(10)  # Wait longer on error
 
+# Authentication required decorator for SocketIO
+def authenticated_only(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not session.get('username'):
+            emit('redirect', {'url': url_for('login')})
+            return
+        return f(*args, **kwargs)
+    return wrapped
+
+# Routes
 @app.route('/')
+@login_required
 def index():
-    """Render the SIEM dashboard."""
-    return render_template_string(HTML_TEMPLATE)
+    """Render the main dashboard."""
+    try:
+        # Get latest events
+        events = get_sysmon_events(limit=50)
+        
+        # Ensure events is a list
+        if not isinstance(events, list):
+            logger.error(f"Expected events to be a list, got {type(events)}")
+            events = []
+            
+        # Get system info
+        system_info = get_system_info()
+        
+        # Count events by type and severity
+        event_types = {}
+        severity_counts = {'high': 0, 'medium': 0, 'low': 0}
+        
+        for event in events:
+            try:
+                # Ensure event is a dictionary
+                if not isinstance(event, dict):
+                    logger.warning(f"Skipping invalid event: {event}")
+                    continue
+                    
+                # Count by type
+                event_type = f"Event {event.get('event_id', 'unknown')}"
+                event_types[event_type] = event_types.get(event_type, 0) + 1
+                
+                # Count by severity
+                severity = str(event.get('level', 'low')).lower()
+                if severity in severity_counts:
+                    severity_counts[severity] += 1
+                    
+            except Exception as e:
+                logger.error(f"Error processing event {event}: {e}")
+                continue
+        
+        # Update dashboard metrics
+        dashboard_data.metrics = {
+            'system': system_info,
+            'events': {
+                'total': len(events),
+                'by_type': event_types,
+                'by_severity': severity_counts
+            },
+            'performance': {
+                'cpu': system_info.get('cpu', 0),
+                'memory': system_info.get('memory', 0),
+                'disk': system_info.get('disk', 0),
+                'network': 0
+            }
+        }
+        
+        return render_template('dashboard/index.html', 
+                            events=events[-20:],  # Show only last 20 events
+                            metrics=dashboard_data.metrics,
+                            username=session.get('username'),
+                            role=session.get('role'))
+                            
+    except Exception as e:
+        logger.error(f"Error in index route: {e}")
+        # Return a basic response even if there's an error
+        return render_template('dashboard/index.html',
+                            events=[],
+                            metrics={
+                                'system': {},
+                                'events': {'total': 0, 'by_type': {}, 'by_severity': {'high': 0, 'medium': 0, 'low': 0}},
+                                'performance': {'cpu': 0, 'memory': 0, 'disk': 0, 'network': 0}
+                            },
+                            username=session.get('username'),
+                            role=session.get('role'))
 
 @app.route('/api/events')
+@login_required
 def api_events():
-    """API endpoint to get Sysmon events as JSON."""
-    return jsonify({
-        'events': events,
-        'stats': stats
+    """API endpoint to get events as JSON."""
+    # For demo purposes, limit some data for non-admin users
+    response_data = {
+        'events': dashboard_data.events,
+        'metrics': dashboard_data.metrics,
+        'last_updated': dashboard_data.last_updated.isoformat(),
+        'user': {
+            'username': session.get('username'),
+            'role': session.get('role')
+        }
+    }
+    
+    # If not admin, limit sensitive information
+    if session.get('role') != 'admin':
+        # Remove or obfuscate sensitive fields from events
+        for event in response_data['events']:
+            if 'data' in event and isinstance(event['data'], list):
+                # Example: Obscure sensitive data in events for non-admins
+                if any(sensitive in str(event).lower() for sensitive in ['password', 'secret', 'key']):
+                    event['data'] = ['[REDACTED - Requires Admin Access]']
+    
+    return jsonify(response_data)
+
+# WebSocket event handlers
+@socketio.on('connect')
+@authenticated_only
+def handle_connect():
+    """Handle new WebSocket connections."""
+    logger.info(f"Client connected: {session.get('username')}")
+    # Send current data to new client
+    emit('data_update', {
+        'metrics': dashboard_data.metrics,
+        'last_updated': dashboard_data.last_updated.isoformat(),
+        'user': {
+            'username': session.get('username'),
+            'role': session.get('role')
+        }
     })
 
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection."""
+    logger.info("Client disconnected")
+
 if __name__ == '__main__':
-    # Start background thread to update events
+    # Initial data load
+    update_dashboard_data()
+    
+    # Start background thread
     thread = threading.Thread(target=background_thread, daemon=True)
     thread.start()
     
-    # Get initial system info
-    stats['host_info'] = get_system_info()
-    
-    print("Starting SIEM Dashboard on http://localhost:5000")
-    print("Press Ctrl+C to stop")
-    
-    # Start the Flask-SocketIO server
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    # Start the web server
+    logger.info("Starting SIEM Dashboard on http://localhost:5000")
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

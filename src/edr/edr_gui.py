@@ -23,6 +23,30 @@ class EDRGUI:
         self.root.geometry("1200x800")
         self.root.minsize(1000, 700)
         
+        # Setup logging
+        self.logger = logging.getLogger('EDRGUI')
+        self.logger.setLevel(logging.INFO)
+        
+        # Create logs directory if it doesn't exist
+        os.makedirs('logs', exist_ok=True)
+        
+        # Create file handler which logs even debug messages
+        fh = logging.FileHandler('logs/edr_gui.log')
+        fh.setLevel(logging.DEBUG)
+        
+        # Create console handler with a higher log level
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.ERROR)
+        
+        # Create formatter and add it to the handlers
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+        
+        # Add the handlers to the logger
+        self.logger.addHandler(fh)
+        self.logger.addHandler(ch)
+        
         # Initialize data structures
         self.processes = {}
         self.process_tree = {}
@@ -33,16 +57,13 @@ class EDRGUI:
         
         # Initialize components
         self.rule_manager = RuleManager(os.path.join('edr', 'rules'))
-        self.threat_detector = None
+        self.threat_detector = ThreatDetector(self.rule_manager)
         
         # Load configuration
         self.load_config()
         
         # Setup UI
         self.setup_ui()
-        
-        # Initialize threat detection
-        self.init_threat_detection()
         
         # Start process monitoring
         self.update_processes()
@@ -122,6 +143,11 @@ class EDRGUI:
         main_container = ttk.Frame(self.root, padding="5")
         main_container.pack(fill=tk.BOTH, expand=True)
         
+        # Status bar
+        self.status_var = tk.StringVar()
+        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
         # Top toolbar
         toolbar = ttk.Frame(main_container)
         toolbar.pack(fill=tk.X, pady=(0, 5))
@@ -149,8 +175,8 @@ class EDRGUI:
         tree_frame.pack(fill=tk.BOTH, expand=True)
         
         # Create treeview with scrollbars
-        self.tree = ttk.Treeview(tree_frame, columns=("PID", "Name", "Status", "CPU %", "Memory %", "Username"), 
-                                selectmode="extended")
+        self.tree = ttk.Treeview(tree_frame, columns=("PID", "Name", "Status", "CPU %", "Memory %", "Username", "Threat"), 
+                                selectmode="extended", show="headings")
         
         # Configure scrollbars
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
@@ -163,13 +189,13 @@ class EDRGUI:
         hsb.grid(column=0, row=1, sticky='ew')
         
         # Configure tree columns
-        self.tree.heading("#0", text="")
         self.tree.heading("PID", text="PID", command=lambda: self.sort_column("PID", False))
         self.tree.heading("Name", text="Name", command=lambda: self.sort_column("Name", False))
         self.tree.heading("Status", text="Status", command=lambda: self.sort_column("Status", False))
         self.tree.heading("CPU %", text="CPU %", command=lambda: self.sort_column("CPU %", False))
         self.tree.heading("Memory %", text="Memory %", command=lambda: self.sort_column("Memory %", True))
         self.tree.heading("Username", text="Username", command=lambda: self.sort_column("Username", False))
+        self.tree.heading("Threat", text="Threat", command=lambda: self.sort_column("Threat", False))
         
         # Configure column widths
         self.tree.column("#0", width=0, stretch=tk.NO)
@@ -279,21 +305,24 @@ class EDRGUI:
     def _apply_rules(self):
         """Apply the current rules to the threat detector."""
         if not hasattr(self, 'threat_detector') or not self.threat_detector:
-            messagebox.showerror("Error", "Threat detector not initialized")
+            self.logger.warning("Cannot apply rules: threat detector not initialized")
             return
             
         try:
-            # Get all enabled rules
-            rules = self.rule_manager.get_rules(enabled=True)
-            
-            # Update threat detector with new rules
-            self.threat_detector.update_rules(rules)
-            
-            messagebox.showinfo("Success", f"Applied {len(rules)} rules to threat detector")
+            rules = self.rule_manager.get_rules()
+            if hasattr(self.threat_detector, 'update_rules'):
+                self.threat_detector.update_rules(rules)
+            self.logger.info(f"Applied {len(rules)} rules to threat detector")
             self.update_status(f"Applied {len(rules)} detection rules")
-            
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to apply rules: {e}")
+            self.logger.error(f"Failed to apply rules: {str(e)}", exc_info=True)
+            messagebox.showerror("Error", f"Failed to apply rules: {str(e)}")
+    
+    def update_status(self, message: str):
+        """Update the status bar with a message."""
+        if hasattr(self, 'status_var'):
+            self.status_var.set(message)
+        self.logger.info(f"Status: {message}")
     
     def _refresh_rules(self):
         """Refresh the rules from disk."""
@@ -309,19 +338,14 @@ class EDRGUI:
     def init_threat_detection(self):
         """Initialize the threat detection system."""
         try:
-            # Get enabled rules
-            rules = self.rule_manager.get_rules(enabled=True)
-            
-            # Initialize threat detector with rules
-            self.threat_detector = ThreatDetector(
-                alert_callback=self.handle_threat_alert,
-                rules=rules
-            )
-            self.threat_detector.start()
-            self.update_status(f"Threat detection started with {len(rules)} rules")
+            # Initialize threat detector
+            self.threat_detector = ThreatDetector(rule_manager=self.rule_manager)
+            if hasattr(self.threat_detector, 'start'):
+                self.threat_detector.start()
+            self.logger.info("Threat detection initialized")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to start threat detection: {e}")
-            logging.exception("Threat detection initialization failed")
+            self.logger.error(f"Threat detection initialization failed: {str(e)}", exc_info=True)
+            messagebox.showerror("Error", f"Failed to initialize threat detection: {str(e)}")
     
     def handle_threat_alert(self, alert):
         """Handle threat detection alerts."""

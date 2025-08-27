@@ -1,0 +1,29 @@
+{
+    "suspicious_processes": [
+        "powershell.exe",
+        "cmd.exe",
+        "wscript.exe",
+        "cscript.exe",
+        "mshta.exe",
+        "regsvr32.exe",
+        "rundll32.exe",
+        "msiexec.exe"
+    ],
+    "suspicious_paths": [
+        "temp",
+        "appdata",
+        "windows\\temp"
+    ],
+    "threat_detection": {
+        "enabled": true,
+        "scan_interval": 60,
+        "auto_block_high": true,
+        "auto_block_medium": false,
+        "auto_block_low": false
+    },
+    "alerts": {
+        "show_popup": true,
+        "play_sound": false,
+        "log_to_file": true
+    }
+}
