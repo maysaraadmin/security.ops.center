@@ -1,0 +1,120 @@
+# NIPS (Network Intrusion Prevention System) Configuration
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/nips.log"
+
+# NIPS specific configuration
+nips:
+  # General settings
+  host: "0.0.0.0"
+  port: 5007
+  debug: false
+  
+  # Network interfaces to monitor
+  interfaces: ["eth0", "en0"]
+  
+  # Detection settings
+  detection:
+    # Port scan detection
+    port_scan:
+      enabled: true
+      threshold: 10  # Number of ports to trigger detection
+      time_window: 60  # seconds
+      
+    # SYN flood protection
+    syn_flood:
+      enabled: true
+      threshold: 100  # Max SYN packets per second
+      
+    # ICMP flood protection
+    icmp_flood:
+      enabled: true
+      threshold: 100  # Max ICMP packets per second
+      
+    # DNS amplification attack detection
+    dns_amplification:
+      enabled: true
+      response_threshold: 10  # Max response size to request size ratio
+      
+  # Rules
+  rules:
+    # Common web attacks
+    - name: "sql_injection"
+      description: "Detect SQL injection attempts"
+      protocol: ["tcp"]
+      ports: [80, 443, 8080, 8443]
+      pattern: "(?i)(?:union\\s+select|select\\s+.*\\s+from|insert\\s+into|update\\.*\\sset|delete\\s+from|drop\\s+table|truncate\\s+table|--|#|;\\s*--|/\\*.*\\*/|xp_cmdshell|exec\\(|sp_|@@version)"
+      action: "block"
+      severity: "high"
+      
+    # Cross-site scripting (XSS)
+    - name: "xss_attack"
+      description: "Detect cross-site scripting attempts"
+      protocol: ["tcp"]
+      ports: [80, 443, 8080, 8443]
+      pattern: "(?i)(?:<script|<img|<iframe|javascript:|onerror=|onload=|onmouseover=)"
+      action: "block"
+      severity: "high"
+      
+    # Common exploit attempts
+    - name: "common_exploits"
+      description: "Detect common exploit attempts"
+      protocol: ["tcp", "udp"]
+      ports: ["all"]
+      pattern: "(?i)(?:/etc/passwd|/etc/shadow|/bin/sh|/bin/bash|wget\\s+http|curl\\s+http|powershell\\s+-nop\\s+-c|\\$\\(?![a-zA-Z]|\\{).*\\(|\\$\{IFS\}|/dev/tcp/|/dev/udp/|\\$\{PATH\})"
+      action: "block"
+      severity: "high"
+  
+  # Response actions
+  response:
+    # Block IP address
+    block_ip:
+      enabled: true
+      duration: 3600  # seconds (0 = permanent)
+      
+    # Rate limiting
+    rate_limit:
+      enabled: true
+      threshold: 100  # packets per second
+      
+    # TCP reset
+    tcp_reset:
+      enabled: true
+      
+  # Integration with SIEM
+  siem:
+    enabled: true
+    host: "localhost"
+    port: 5001
+    
+  # API settings
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 5007
+    secret_key: "your-nips-secret-key-here"
+    
+  # Update settings
+  updates:
+    enabled: true
+    check_interval: 3600  # seconds
+    url: "https://updates.your-nips.com"
+    
+  # Alerting settings
+  alerting:
+    email:
+      enabled: false
+      smtp_host: "smtp.example.com"
+      smtp_port: 587
+      smtp_user: "nips@example.com"
+      smtp_password: "your-password"
+      from_email: "nips-alerts@yourdomain.com"
+      to_emails: ["security-team@yourdomain.com"]
+    
+    # Webhook for alert notifications
+    webhook:
+      enabled: false
+      url: "https://your-webhook-url.com/nips-alert"

@@ -1,0 +1,4 @@
+flask==2.3.3
+flask-socketio==5.3.5
+eventlet==0.33.3
+python-dotenv==1.0.0

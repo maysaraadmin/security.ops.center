@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1 class="mb-4">SIEM Dashboard</h1>
+    
+    <!-- Status Card -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>System Status</span>
+                    <span id="siem-status" class="badge bg-secondary">unknown</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h5>SIEM Status</h5>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span>Current Status:</span>
+                                <span id="siem-status-text" class="badge bg-secondary">Checking...</span>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button id="start-siem" class="btn btn-success">Start SIEM</button>
+                                <button id="stop-siem" class="btn btn-danger" disabled>Stop SIEM</button>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <h5>System Information</h5>
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <tbody>
+                                        <tr>
+                                            <th>Version</th>
+                                            <td id="version">1.0.0</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Uptime</th>
+                                            <td id="uptime">-</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Components</th>
+                                            <td id="component-count">0</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Alerts (24h)</th>
+                                            <td id="alert-count">0</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Components Status -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    Components Status
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="components-table">
+                            <thead>
+                                <tr>
+                                    <th>Component</th>
+                                    <th>Status</th>
+                                    <th>Last Checked</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="4" class="text-center">No components available</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Alerts -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Recent Alerts</span>
+                    <a href="#" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        No recent alerts. The system is running normally.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Update status function
+    function updateStatus() {
+        fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Update status badge
+                    const statusBadge = document.getElementById('siem-status');
+                    const statusText = document.getElementById('siem-status-text');
+                    
+                    if (data.data.status === 'running') {
+                        statusBadge.className = 'badge bg-success';
+                        statusText.textContent = 'Running';
+                        statusText.className = 'badge bg-success';
+                        document.getElementById('start-siem').disabled = true;
+                        document.getElementById('stop-siem').disabled = false;
+                    } else {
+                        statusBadge.className = 'badge bg-danger';
+                        statusText.textContent = 'Stopped';
+                        statusText.className = 'badge bg-danger';
+                        document.getElementById('start-siem').disabled = false;
+                        document.getElementById('stop-siem').disabled = true;
+                    }
+
+                    // Update component count
+                    if (data.data.components) {
+                        document.getElementById('component-count').textContent = 
+                            Object.keys(data.data.components).length;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching status:', error);
+                document.getElementById('siem-status-text').textContent = 'Error';
+                document.getElementById('siem-status-text').className = 'badge bg-warning';
+            });
+    }
+
+    // Start SIEM
+    document.getElementById('start-siem').addEventListener('click', function() {
+        fetch('/api/start', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    updateStatus();
+                } else {
+                    alert('Failed to start SIEM: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error starting SIEM:', error);
+                alert('Error starting SIEM: ' + error.message);
+            });
+    });
+
+    // Stop SIEM
+    document.getElementById('stop-siem').addEventListener('click', function() {
+        if (confirm('Are you sure you want to stop the SIEM system?')) {
+            fetch('/api/stop', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateStatus();
+                    } else {
+                        alert('Failed to stop SIEM: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error stopping SIEM:', error);
+                    alert('Error stopping SIEM: ' + error.message);
+                });
+        }
+    });
+
+    // Initial status update
+    document.addEventListener('DOMContentLoaded', function() {
+        updateStatus();
+        // Update status every 5 seconds
+        setInterval(updateStatus, 5000);
+    });
+</script>
+{% endblock %}

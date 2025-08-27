@@ -1,0 +1,237 @@
+{
+    "standard": "SOX",
+    "version": "1.0",
+    "description": "Sarbanes-Oxley Act Compliance Template",
+    "sections": [
+        {
+            "title": "Section 302 - Corporate Responsibility for Financial Reports",
+            "requirements": [
+                {
+                    "id": "302-a",
+                    "description": "CEO and CFO must certify the accuracy of financial statements",
+                    "controls": [
+                        "quarterly_certification_process",
+                        "disclosure_controls_effectiveness",
+                        "fraud_prevention_measures"
+                    ]
+                },
+                {
+                    "id": "302-b",
+                    "description": "Disclosure of significant deficiencies and material weaknesses",
+                    "controls": [
+                        "deficiency_detection_process",
+                        "material_weakness_reporting",
+                        "remediation_tracking"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "Section 404 - Management Assessment of Internal Controls",
+            "requirements": [
+                {
+                    "id": "404-a1",
+                    "description": "Annual assessment of internal controls over financial reporting",
+                    "controls": [
+                        "control_documentation",
+                        "control_testing_process",
+                        "deficiency_evaluation"
+                    ]
+                },
+                {
+                    "id": "404-a2",
+                    "description": "External auditor attestation of management's assessment",
+                    "controls": [
+                        "auditor_independence_verification",
+                        "audit_committee_oversight",
+                        "management_representation_process"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "Section 409 - Real Time Issuer Disclosures",
+            "requirements": [
+                {
+                    "id": "409-a",
+                    "description": "Disclosure of material changes in financial condition or operations",
+                    "controls": [
+                        "materiality_assessment_framework",
+                        "event_monitoring_process",
+                        "disclosure_approval_workflow"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "IT General Controls (ITGC)",
+            "requirements": [
+                {
+                    "id": "ITGC-001",
+                    "description": "Program Development and Change Management",
+                    "controls": [
+                        "change_management_process",
+                        "segregation_of_duties",
+                        "testing_and_approval_workflow"
+                    ]
+                },
+                {
+                    "id": "ITGC-002",
+                    "description": "Program Changes",
+                    "controls": [
+                        "change_documentation",
+                        "impact_analysis",
+                        "user_acceptance_testing"
+                    ]
+                },
+                {
+                    "id": "ITGC-003",
+                    "description": "Computer Operations",
+                    "controls": [
+                        "job_scheduling_and_processing",
+                        "backup_and_recovery",
+                        "incident_management"
+                    ]
+                },
+                {
+                    "id": "ITGC-004",
+                    "description": "Access to Programs and Data",
+                    "controls": [
+                        "user_access_reviews",
+                        "privileged_access_management",
+                        "authentication_mechanisms"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "Key Business Process Controls",
+            "requirements": [
+                {
+                    "id": "BPC-001",
+                    "description": "Revenue Cycle",
+                    "controls": [
+                        "revenue_recognition_policies",
+                        "accounts_receivable_aging",
+                        "sales_return_processing"
+                    ]
+                },
+                {
+                    "id": "BPC-002",
+                    "description": "Expenditure Cycle",
+                    "controls": [
+                        "purchase_authorization",
+                        "vendor_management",
+                        "expense_approval_workflow"
+                    ]
+                },
+                {
+                    "id": "BPC-003",
+                    "description": "Financial Reporting",
+                    "controls": [
+                        "account_reconciliations",
+                        "journal_entry_approval",
+                        "financial_statement_preparation"
+                    ]
+                }
+            ]
+        }
+    ],
+    "audit_checks": [
+        {
+            "id": "SOX-AUDIT-001",
+            "description": "Control Environment Assessment",
+            "verification_points": [
+                "tone_at_the_top_evaluation",
+                "organizational_structure_review",
+                "delegation_of_authority"
+            ]
+        },
+        {
+            "id": "SOX-AUDIT-002",
+            "description": "Risk Assessment Process",
+            "verification_points": [
+                "risk_identification_process",
+                "risk_mitigation_strategies",
+                "fraud_risk_assessment"
+            ]
+        },
+        {
+            "id": "SOX-AUDIT-003",
+            "description": "Control Activities",
+            "verification_points": [
+                "control_design_effectiveness",
+                "control_operation_effectiveness",
+                "remediation_plans"
+            ]
+        },
+        {
+            "id": "SOX-AUDIT-004",
+            "description": "Information and Communication",
+            "verification_points": [
+                "financial_reporting_systems",
+                "whistleblower_program",
+                "internal_communication_channels"
+            ]
+        },
+        {
+            "id": "SOX-AUDIT-005",
+            "description": "Monitoring Activities",
+            "verification_points": [
+                "ongoing_monitoring_processes",
+                "separate_evaluations",
+                "deficiency_reporting"
+            ]
+        }
+    ],
+    "reporting_requirements": {
+        "internal_control_report": {
+            "management_assessment": {
+                "required": true,
+                "frequency": "quarterly",
+                "sign_off": ["ceo", "cfo"]
+            },
+            "auditor_attestation": {
+                "required": true,
+                "scope": "internal_controls_over_financial_reporting"
+            }
+        },
+        "material_weakness_reporting": {
+            "timeframe": "immediate_upon_detection",
+            "recipients": ["audit_committee", "external_auditors"],
+            "remediation_plan_required": true
+        },
+        "disclosure_controls": {
+            "evaluation_frequency": "quarterly",
+            "certification_required": true,
+            "documentation_retention": "7_years"
+        },
+        "whistleblower_program": {
+            "confidential_reporting": true,
+            "anonymous_reporting": true,
+            "non_retaliation_policy": true
+        },
+        "document_retention": {
+            "financial_records": "7_years",
+            "audit_reports": "7_years",
+            "supporting_documentation": "7_years"
+        }
+    },
+    "testing_procedures": {
+        "test_of_design": {
+            "purpose": "verify_control_adequacy",
+            "methods": ["inquiry", "observation", "inspection"],
+            "sample_size": "all_key_controls"
+        },
+        "test_of_effectiveness": {
+            "purpose": "verify_control_operation",
+            "methods": ["reperformance", "recalculation", "reconciliation"],
+            "sample_size": "statistically_significant"
+        },
+        "sampling_approach": {
+            "random_selection": true,
+            "stratified_sampling": true,
+            "haphazard_selection": false
+        }
+    }
+}

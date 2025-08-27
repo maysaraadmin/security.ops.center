@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">SIEM Components</h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <div class="btn-group me-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-gear"></i> Configure
+                </button>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-circle"></i> Add Component
+            </button>
+        </div>
+    </div>
+
+    <!-- Components Overview -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-uppercase text-white-50 mb-1">Total Components</h6>
+                            <h2 class="mb-0" id="totalComponents">8</h2>
+                        </div>
+                        <i class="bi bi-hdd-rack display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-uppercase text-white-50 mb-1">Running</h6>
+                            <h2 class="mb-0" id="runningComponents">6</h2>
+                        </div>
+                        <i class="bi bi-check-circle display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-uppercase text-dark-50 mb-1">Warning</h6>
+                            <h2 class="mb-0" id="warningComponents">1</h2>
+                        </div>
+                        <i class="bi bi-exclamation-triangle display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title text-uppercase text-white-50 mb-1">Critical</h6>
+                            <h2 class="mb-0" id="criticalComponents">1</h2>
+                        </div>
+                        <i class="bi bi-x-circle display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Components List -->
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-hdd-stack me-1"></i>
+            Component Status
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="componentsTable">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Uptime</th>
+                            <th>CPU</th>
+                            <th>Memory</th>
+                            <th>Last Check</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <i class="bi bi-hdd-network me-2"></i>
+                                <strong>SIEM Core</strong>
+                            </td>
+                            <td>Core Service</td>
+                            <td><span class="badge bg-success">Running</span></td>
+                            <td>2d 5h 12m</td>
+                            <td>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 25%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <small>25%</small>
+                            </td>
+                            <td>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 45%" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <small>45% (1.2GB)</small>
+                            </td>
+                            <td>2 seconds ago</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-gear"></i></button>
+                                <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <i class="bi bi-shield-lock me-2"></i>
+                                <strong>Firewall Monitor</strong>
+                            </td>
+                            <td>Security</td>
+                            <td><span class="badge bg-success">Running</span></td>
+                            <td>1d 8h 32m</td>
+                            <td>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: 12%" aria-valuenow="12" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <small>12%</small>
+                            </td>
+                            <td>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-info" role="progressbar" style="width: 32%" aria-valuenow="32" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <small>32% (0.8GB)</small>
+                            </td>
+                            <td>5 seconds ago</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-gear"></i></button>
+                                <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <i class="bi bi-shield-shaded me-2"></i>
+                                <strong>IDS Engine</strong>
+                            </td>
+                            <td>Security</td>
+                            <td><span class="badge bg-warning">Warning</span></td>
+                            <td>3h 45m</td>
+                            <td>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 65%" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <small>65%</small>
+                            </td>
+                            <td>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: 78%" aria-valuenow="78" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <small>78% (2.1GB)</small>
+                            </td>
+                            <td>10 seconds ago</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-gear"></i></button>
+                                <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-repeat"></i></button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <i class="bi bi-database me-2"></i>
+                                <strong>Log Collector</strong>
+                            </td>
+                            <td>Data Collection</td>
+                            <td><span class="badge bg-danger">Stopped</span></td>
+                            <td>N/A</td>
+                            <td>N/A</td>
+                            <td>N/A</td>
+                            <td>5 minutes ago</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-gear"></i></button>
+                                <button class="btn btn-sm btn-outline-success"><i class="bi bi-play"></i></button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Component Details Modal -->
+    <div class="modal fade" id="componentDetailsModal" tabindex="-1" aria-labelledby="componentDetailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="componentDetailsModalLabel">Component Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6>Component Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th>Name:</th>
+                                    <td id="detailName">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Type:</th>
+                                    <td id="detailType">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Version:</th>
+                                    <td id="detailVersion">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Status:</th>
+                                    <td><span id="detailStatus" class="badge">-</span></td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Resource Usage</h6>
+                            <div class="mb-3">
+                                <label class="form-label">CPU Usage</label>
+                                <div class="progress">
+                                    <div id="detailCpuBar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Memory Usage</label>
+                                <div class="progress">
+                                    <div id="detailMemBar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6>Recent Logs</h6>
+                            <div class="border rounded p-2 bg-light" style="height: 150px; overflow-y: auto;">
+                                <pre class="mb-0" id="componentLogs">Loading logs...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary">View Full Logs</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // This would be replaced with actual component status updates
+        console.log('Components page loaded');
+        
+        // Example of how to show component details
+        document.querySelectorAll('#componentsTable tbody tr').forEach(row => {
+            row.addEventListener('click', function() {
+                // This would be populated with actual component data
+                document.getElementById('detailName').textContent = this.cells[0].textContent.trim();
+                document.getElementById('detailType').textContent = this.cells[1].textContent;
+                document.getElementById('detailStatus').textContent = this.cells[2].textContent.trim();
+                document.getElementById('detailStatus').className = 'badge ' + this.cells[2].querySelector('.badge').className;
+                
+                // Show the modal
+                var modal = new bootstrap.Modal(document.getElementById('componentDetailsModal'));
+                modal.show();
+            });
+        });
+    });
+</script>
+{% endblock %}

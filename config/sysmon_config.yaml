@@ -1,0 +1,159 @@
+# Sysmon Collector Configuration
+
+# General settings
+general:
+  enabled: true
+  log_level: DEBUG  # Increased verbosity
+  max_events_per_poll: 100
+  poll_interval: 5  # seconds
+
+# Event filtering
+filters:
+  # Include only these event IDs (empty for all)
+  include_event_ids: []
+  
+  # Exclude these event IDs
+  exclude_event_ids: [4, 5]  # Exclude Sysmon service state changes by default
+  
+  # Filter by process name (regex pattern)
+  process_include_patterns: []
+  process_exclude_patterns: ["^C:\\Windows\.*", "^C:\\Program Files\\.*"]
+
+# Field mappings
+field_mappings:
+  # Map Sysmon event IDs to SIEM event types
+  event_type_mapping:
+    1: "process_create"
+    3: "network_connection"
+    7: "image_loaded"
+    8: "create_remote_thread"
+    9: "raw_access_read"
+    10: "process_access"
+    11: "file_create"
+    12: "registry_event"
+    13: "registry_event"
+    14: "registry_event"
+    15: "create_stream_hash"
+    17: "pipe_created"
+    18: "pipe_connected"
+    19: "wmi_event"
+    20: "wmi_event"
+    21: "wmi_event"
+    22: "dns_query"
+    23: "file_delete"
+    24: "clipboard_capture"
+    25: "process_tampering"
+    26: "file_delete_detected"
+    27: "file_block_executable"
+    28: "file_block_shredding"
+
+# Output configuration
+output:
+  # Where to send the events
+  # Options: console, file, http, kafka, redis, etc.
+  type: console
+  console:
+    enabled: true
+    format: json  # Output as JSON for better readability
+  
+  # File output settings
+  file:
+    path: "logs/sysmon_events.log"
+    max_size_mb: 100
+    backup_count: 5
+    
+  # HTTP output settings
+  http:
+    url: "http://localhost:8080/ingest"
+    auth_token: ""
+    timeout: 5
+    
+  # Kafka output settings
+  kafka:
+    bootstrap_servers: "localhost:9092"
+    topic: "siem_events"
+    ssl_enabled: false
+    
+  # Redis output settings
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    key: "siem:events"
+
+# Enrichment settings
+enrichment:
+  # Enable/disable enrichment
+  enabled: true
+  
+  # Add host information to events
+  add_host_info: true
+  
+  # Add process information to events
+  add_process_info: true
+  
+  # Add user information to events
+  add_user_info: true
+  
+  # Add network information to events
+  add_network_info: true
+
+# Alerting rules
+alert_rules:
+  - name: "Suspicious Process Creation"
+    enabled: true
+    description: "Alert when a suspicious process is created"
+    condition: "event_type == 'process_create' and process_name in ['powershell.exe', 'cmd.exe', 'wmic.exe']"
+    severity: "high"
+    
+  - name: "Suspicious Network Connection"
+    enabled: true
+    description: "Alert on suspicious outbound connections"
+    condition: "event_type == 'network_connection' and destination_port in [4444, 8080, 3389]"
+    severity: "medium"
+
+# Performance settings
+performance:
+  # Number of worker threads for processing events
+  worker_threads: 4
+  
+  # Maximum queue size for events waiting to be processed
+  max_queue_size: 10000
+  
+  # Batch size for sending events to output
+  batch_size: 100
+  
+  # Maximum time to wait before sending a batch (seconds)
+  batch_timeout: 5
+
+# Monitoring
+monitoring:
+  # Enable Prometheus metrics endpoint
+  prometheus_enabled: true
+  prometheus_port: 8000
+  
+  # Enable health check endpoint
+  health_check_enabled: true
+  health_check_port: 8080
+
+# Logging configuration
+logging:
+  level: INFO
+  file: "logs/sysmon_collector.log"
+  max_size_mb: 10
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Advanced settings
+advanced:
+  # Buffer size for reading events from the Windows Event Log
+  event_read_buffer_size: 50
+  
+  # Maximum number of events to process in a single batch
+  max_batch_size: 1000
+  
+  # How often to log statistics (seconds)
+  stats_interval: 60
+  
+  # Enable debug mode (verbose logging)
+  debug: false

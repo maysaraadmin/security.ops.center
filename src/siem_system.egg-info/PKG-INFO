@@ -1,0 +1,300 @@
+Metadata-Version: 2.4
+Name: siem-system
+Version: 0.1.0
+Summary: Security Information and Event Management System
+Author-email: Your Name <your.email@example.com>
+License: MIT
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Information Technology
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: sqlite3
+Requires-Dist: python-dateutil>=2.8.2
+Requires-Dist: python-dotenv>=0.19.0
+Requires-Dist: pydantic>=1.8.2
+Provides-Extra: dev
+Requires-Dist: pytest>=6.2.5; extra == "dev"
+Requires-Dist: pytest-cov>=2.12.1; extra == "dev"
+Requires-Dist: black>=21.9b0; extra == "dev"
+Requires-Dist: isort>=5.9.3; extra == "dev"
+Requires-Dist: mypy>=0.910; extra == "dev"
+Requires-Dist: flake8>=4.0.1; extra == "dev"
+Requires-Dist: pre-commit>=2.15.0; extra == "dev"
+Dynamic: requires-python
+
+# Enterprise SIEM System
+
+A comprehensive Security Information and Event Management (SIEM) system designed for enterprise environments. This SIEM provides real-time security monitoring, threat detection, incident response, and compliance reporting capabilities.
+
+## Project Structure (Updated)
+
+```
+security.operations.center/
+├── src/                    # Source code
+│   ├── siem/               # Core SIEM components
+│   │   ├── core/           # Core framework and base classes
+│   │   ├── services/       # Service implementations
+│   │   ├── models/         # Data models
+│   │   ├── api/            # API endpoints and handlers
+│   │   └── utils/          # Utility functions
+│   │
+│   ├── edr/                # Endpoint Detection & Response
+│   ├── dlp/                # Data Loss Prevention
+│   ├── hips/               # Host-based IPS
+│   ├── nips/               # Network-based IPS
+│   ├── ndr/                # Network Detection & Response
+│   └── fim/                # File Integrity Monitoring
+│
+├── tests/                  # Test files
+│   ├── unit/               # Unit tests
+│   ├── integration/        # Integration tests
+│   └── e2e/                # End-to-end tests
+│
+├── config/                 # Configuration files
+│   ├── development/        # Development configurations
+│   ├── production/         # Production configurations
+│   └── testing/            # Testing configurations
+│
+├── docs/                   # Documentation
+│   ├── api/                # API documentation
+│   ├── architecture/       # Architecture decisions
+│   └── deployment/         # Deployment guides
+│
+├── infrastructure/         # Infrastructure as Code
+│   ├── docker/             # Docker configurations
+│   ├── kubernetes/         # Kubernetes manifests
+│   └── terraform/          # Terraform configurations
+│
+├── data/                   # Data storage
+│   ├── logs/               # Application logs
+│   ├── db/                 # Database files
+│   └── backups/            # Backup files
+│
+├── scripts/                # Utility scripts
+│   ├── lint/               # Linting scripts
+│   ├── docs/               # Documentation generation
+│   └── test/               # Test automation
+│
+└── tools/                  # Development tools
+    ├── lint/               # Linting tools
+    ├── docs/               # Documentation tools
+    └── test/               # Testing tools
+```
+
+## Features
+
+- **Log Collection & Aggregation**
+  - Multi-source log collection (syslog, Windows Event Log, files, APIs)
+  - Log normalization and enrichment
+  - Support for structured and unstructured logs
+
+- **Real-time Event Correlation**
+  - Rule-based correlation engine
+  - Complex event processing
+  - Anomaly detection
+
+- **Threat Detection**
+  - Signature-based detection
+  - Behavioral analysis
+  - Threat intelligence integration
+
+- **Security Modules**
+  - **EDR (Endpoint Detection & Response)**: Monitor and respond to endpoint threats
+  - **NDR (Network Detection & Response)**: Network traffic analysis and threat detection
+  - **DLP (Data Loss Prevention)**: Prevent sensitive data exfiltration
+  - **FIM (File Integrity Monitoring)**: Detect unauthorized file changes
+  - **HIPS (Host-based Intrusion Prevention)**: Protect endpoints from malicious activities
+  - **NIPS (Network Intrusion Prevention)**: Block network-based attacks
+  - **Compliance Management**: Ensure compliance with regulations (GDPR, HIPAA, PCI DSS, SOX)
+
+- **Alerting & Notification**
+  - Multi-channel notifications (Email, Slack, Webhooks)
+  - Alert prioritization and deduplication
+  - Customizable alert rules
+
+- **Dashboards & Reporting**
+  - Real-time security dashboards
+  - Custom reports
+  - Compliance reporting
+
+- **Incident Response**
+  - Case management
+  - Automated response actions
+  - Playbook integration
+
+## Prerequisites
+
+- Python 3.8+
+- pip (Python package manager)
+- Required system libraries (varies by platform)
+
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-org/siem.git
+   cd siem
+   ```
+
+2. Create and activate a virtual environment (recommended):
+   ```bash
+   # On Windows
+   python -m venv venv
+   .\venv\Scripts\activate
+   
+   # On Unix/macOS
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Configure the SIEM system by editing `config/siem_config.yaml`
+
+## Configuration
+
+Edit the configuration file at `config/siem_config.yaml` to customize the SIEM settings. The configuration includes sections for:
+
+- Log collection sources
+- Correlation rules
+- Alerting settings
+- Storage backends
+- Authentication providers
+- Module-specific configurations
+
+## Running the SIEM
+
+### Starting the SIEM System
+
+```bash
+python run_siem.py
+```
+
+### Command-line Options
+
+```
+usage: run_siem.py [-h] [--config CONFIG] [--debug]
+
+SIEM System
+
+options:
+  -h, --help       show this help message and exit
+  --config CONFIG  Path to configuration file
+  --debug          Enable debug logging
+```
+
+### Running in Production
+
+For production deployments, it's recommended to run the SIEM system using a process manager like systemd or Supervisor. Here's an example systemd service file:
+
+```ini
+[Unit]
+Description=SIEM System
+After=network.target
+
+[Service]
+User=siem
+Group=siem
+WorkingDirectory=/opt/siem
+Environment="PATH=/opt/siem/venv/bin"
+ExecStart=/opt/siem/venv/bin/python run_siem.py --config /etc/siem/config.yaml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Architecture
+
+The SIEM system is built with a modular architecture that allows for easy extension and customization:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SIEM Core System                     │
+├─────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────────┐  ┌───────────┐  │
+│  │ Log Manager │◄─┤  Alert Manager  │◄─┤  Correlation  │
+│  └─────────────┘  └─────────────────┘  │   Engine   │  │
+│         ▲               ▲            └───────────┘  │
+│         │               │                  ▲        │
+│         ▼               ▼                  │        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │  Security   │  │  Incident   │  │  Reporting  │  │
+│  │  Modules    │  │  Response   │  │    & UI     │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│                Data Storage & Backends                  │
+├─────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐  │
+│  │  Event DB   │  │  Alert DB   │  │  File Storage  │  │
+│  │ (Elastic)   │  │ (PostgreSQL)│  │     (S3)      │  │
+│  └─────────────┘  └─────────────┘  └────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Security Modules
+
+### EDR (Endpoint Detection & Response)
+- Process monitoring
+- File system monitoring
+- Registry monitoring (Windows)
+- Memory analysis
+- Behavioral detection
+
+### NDR (Network Detection & Response)
+- Network traffic capture
+- Protocol analysis
+- Threat detection
+- Traffic visualization
+
+### DLP (Data Loss Prevention)
+- Content inspection
+- Policy enforcement
+- Data classification
+- Endpoint protection
+
+### FIM (File Integrity Monitoring)
+- File change detection
+- Checksum verification
+- Baseline management
+- Real-time alerts
+
+### HIPS (Host-based Intrusion Prevention)
+- Application whitelisting
+- System call monitoring
+- Memory protection
+- Exploit prevention
+
+### NIPS (Network Intrusion Prevention)
+- Signature-based detection
+- Protocol anomaly detection
+- Rate limiting
+- Automatic blocking
+
+## API Documentation
+
+The SIEM system provides a RESTful API for integration with other systems. The API documentation is available at `/api/docs` when the API server is running.
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and suggest improvements.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For support, please contact our team at support@example.com or open an issue in the GitHub repository.

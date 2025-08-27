@@ -1,0 +1,29 @@
+2025-08-26 23:35:59,007 - simple_edr - INFO - SimpleEDR initialized
+2025-08-26 23:35:59,007 - simple_edr - INFO - Initializing SimpleEDR...
+2025-08-26 23:35:59,008 - simple_edr - INFO - SimpleEDR initialized successfully
+2025-08-26 23:35:59,008 - simple_edr - INFO - Starting SimpleEDR...
+2025-08-26 23:35:59,012 - simple_edr - INFO - Detected process event: svchost.exe (PID: 9727)
+2025-08-26 23:35:59,012 - simple_edr - INFO - SimpleEDR started successfully
+2025-08-26 23:36:04,013 - simple_edr - INFO - Detected process event: python.exe (PID: 9736)
+2025-08-26 23:36:09,013 - simple_edr - INFO - Detected process event: python.exe (PID: 9601)
+2025-08-26 23:36:14,015 - simple_edr - INFO - Detected process event: svchost.exe (PID: 2348)
+2025-08-26 23:36:24,016 - simple_edr - INFO - Detected process event: explorer.exe (PID: 2485)
+2025-08-26 23:36:24,017 - simple_edr - INFO - Detected process event: python.exe (PID: 9134)
+2025-08-26 23:36:39,018 - simple_edr - INFO - Detected process event: explorer.exe (PID: 6145)
+2025-08-26 23:36:49,019 - simple_edr - INFO - Detected process event: python.exe (PID: 3943)
+2025-08-26 23:37:04,021 - simple_edr - INFO - Detected process event: python.exe (PID: 7062)
+2025-08-26 23:37:19,022 - simple_edr - INFO - Detected process event: explorer.exe (PID: 8053)
+2025-08-26 23:37:29,024 - simple_edr - INFO - Detected process event: svchost.exe (PID: 6802)
+2025-08-26 23:37:39,698 - simple_edr - INFO - Detected process event: svchost.exe (PID: 7047)
+2025-08-26 23:37:46,922 - simple_edr - INFO - Shutdown signal received
+2025-08-26 23:37:46,922 - simple_edr - INFO - Stopping SimpleEDR...
+2025-08-26 23:38:49,211 - simple_edr - INFO - SimpleEDR initialized
+2025-08-26 23:38:49,211 - simple_edr - INFO - Initializing SimpleEDR...
+2025-08-26 23:38:49,212 - simple_edr - INFO - SimpleEDR initialized successfully
+2025-08-26 23:38:49,213 - simple_edr - INFO - Starting SimpleEDR...
+2025-08-26 23:38:49,214 - simple_edr - INFO - SimpleEDR started successfully
+2025-08-26 23:38:54,214 - simple_edr - INFO - Detected process event: python.exe (PID: 1199)
+2025-08-26 23:38:57,069 - simple_edr - INFO - Shutdown signal received
+2025-08-26 23:38:57,070 - simple_edr - INFO - Stopping SimpleEDR...
+2025-08-26 23:38:59,215 - simple_edr - INFO - SimpleEDR stopped successfully
+2025-08-26 23:38:59,216 - simple_edr - WARNING - EDR is not running

@@ -1,0 +1,210 @@
+# EDR Response System Configuration
+
+# General settings
+response:
+  # Enable/disable the response system
+  enabled: true
+  
+  # Default action for unhandled alerts (none, log_only, isolate)
+  default_action: log_only
+  
+  # Directory containing response playbooks
+  playbooks_dir: "edr/response/playbooks"
+  
+  # Maximum number of alerts to keep in history
+  max_alert_history: 1000
+  
+  # Response action configurations
+actions:
+  terminate_process:
+    enabled: true
+    # List of process names that should never be terminated
+    whitelisted_processes:
+      - "lsass.exe"
+      - "csrss.exe"
+      - "winlogon.exe"
+      - "explorer.exe"
+      
+  memory_dump:
+    enabled: true
+    # Directory to store memory dumps
+    output_dir: "/var/forensics/memory_dumps"
+    # Maximum size of memory dump in MB (0 for no limit)
+    max_dump_size_mb: 4096
+    # Whether to compress the memory dump
+    compress: true
+  
+  # Notification settings
+  notifications:
+    # Default recipients for notifications (email, webhook URL, etc.)
+    default_recipients:
+      - "security-team@example.com"
+      - "#security-alerts"
+    
+    # Email notification settings
+    email:
+      enabled: true
+      smtp_server: "smtp.example.com"
+      smtp_port: 587
+      smtp_username: "alerts@example.com"
+      smtp_password: "${SMTP_PASSWORD}"  # Use environment variable
+      from_address: "edr-alerts@example.com"
+      use_tls: true
+    
+    # Webhook settings
+    webhook:
+      enabled: true
+      url: "https://hooks.slack.com/services/..."
+      timeout: 10  # seconds
+  
+  # Quarantine settings
+  quarantine:
+    # Directory to store quarantined files
+    directory: "/var/lib/edr/quarantine"
+    
+    # Maximum size for quarantined files (in MB)
+    max_file_size: 100
+    
+    # File retention period in days
+    retention_days: 30
+  
+  # Network isolation settings
+  isolation:
+    # Enable network isolation for critical threats
+    enabled: true
+    
+    # Isolation method (firewall, network, endpoint)
+    method: "firewall"
+    
+    # Isolation rules
+    firewall_rules:
+      # Block all incoming/outgoing traffic
+      block_all: true
+      
+      # Allow specific IPs/networks even when isolated
+      allowed_ips:
+        - "10.0.0.0/8"  # Internal network
+        - "192.168.1.100"  # Management server
+  
+  # Process termination settings
+  process_termination:
+    # Enable process termination for malicious processes
+    enabled: true
+    
+    # Force kill processes that don't respond to normal termination
+    force_kill: true
+    
+    # Time to wait for process to terminate gracefully (in seconds)
+    termination_timeout: 5
+  
+  # File remediation settings
+  file_remediation:
+    # Enable automatic file remediation
+    enabled: true
+    
+    # Action to take on malicious files (quarantine, delete, none)
+    default_action: "quarantine"
+    
+    # File types to always delete (never quarantine)
+    always_delete:
+      - ".exe"
+      - ".dll"
+      - ".bat"
+      - ".ps1"
+      - ".vbs"
+      - ".js"
+    
+    # File hashes to always allow (whitelist)
+    allowed_hashes: []
+  
+  # IP/Network blocking settings
+  ip_blocking:
+    # Enable automatic IP blocking
+    enabled: true
+    
+    # Block both incoming and outgoing traffic
+    block_direction: "both"  # in, out, both
+    
+    # Block duration in minutes (0 = permanent)
+    block_duration: 1440  # 24 hours
+    
+    # IPs/networks to never block (whitelist)
+    whitelist:
+      - "10.0.0.0/8"
+      - "192.168.0.0/16"
+      - "172.16.0.0/12"
+  
+  # User account management
+  user_management:
+    # Enable automatic user account actions
+    enabled: true
+    
+    # Action to take on compromised accounts (disable, lock, none)
+    default_action: "disable"
+    
+    # Users to exclude from automatic actions
+    excluded_users:
+      - "Administrator"
+      - "root"
+      - "system"
+  
+  # Logging settings
+  logging:
+    # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    level: "INFO"
+    
+    # Log file path
+    file: "/var/log/edr/response.log"
+    
+    # Maximum log file size (in MB)
+    max_size: 100
+    
+    # Number of backup log files to keep
+    backup_count: 5
+  
+  # Integration settings
+  integrations:
+    # SIEM integration
+    siem:
+      enabled: true
+      type: "splunk"  # splunk, elasticsearch, arcsight, etc.
+      endpoint: "https://splunk.example.com:8088/services/collector/event"
+      token: "${SPLUNK_TOKEN}"  # Use environment variable
+      index: "edr"
+      
+    # Ticketing system integration
+    ticketing:
+      enabled: false
+      type: "servicenow"  # servicenow, jira, etc.
+      endpoint: "https://instance.service-now.com/api/now/table/incident"
+      username: "${SERVICENOW_USER}"
+      password: "${SERVICENOW_PASSWORD}"
+      
+    # Threat intelligence feeds
+    threat_intel:
+      enabled: true
+      providers:
+        - name: "VirusTotal"
+          enabled: true
+          api_key: "${VT_API_KEY}"
+          
+        - name: "AlienVault OTX"
+          enabled: true
+          api_key: "${OTX_API_KEY}"
+  
+  # Advanced settings
+  advanced:
+    # Maximum number of concurrent response actions
+    max_concurrent_actions: 10
+    
+    # Timeout for response actions (in seconds)
+    action_timeout: 300
+    
+    # Enable/disable response simulation mode (no actual actions taken)
+    simulation_mode: false
+    
+    # Enable/disable dry run mode (shows what would be done without making changes)
+    dry_run: false
+    
+    # Enable/disable debug mode (more verbose logging)
+    debug: false

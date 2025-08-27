@@ -1,0 +1,259 @@
+# SIEM Configuration File
+
+# Global SIEM Settings
+global:
+  log_level: ${LOG_LEVEL:-INFO}  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  timezone: ${TZ:-UTC}
+  max_workers: ${MAX_WORKERS:-10}  # Max worker threads for parallel processing
+  data_retention_days: ${DATA_RETENTION_DAYS:-90}  # Days to retain raw logs and events
+  
+# Log Collection Configuration
+log_collection:
+  enabled: true
+  sources:
+    - type: syslog
+      enabled: true
+      port: ${SYSLOG_PORT:-514}
+      protocols: [${SYSLOG_PROTOCOLS:-udp,tcp}]
+    - type: windows_event_log
+      enabled: true
+      channels: ${WINDOWS_EVENT_CHANNELS:-Security,System,Application}
+      log_path: ${WINDIR:-C:\\Windows}\\System32\\winevt\\Logs\\
+    - type: file
+      enabled: true
+      paths:
+        - ${UNIX_LOG_PATH:-/var/log/}
+        - ${WINDOWS_LOG_PATH:-${WINDIR:-C:\\Windows}\\System32\\winevt\\Logs\\}
+  
+# Event Correlation Configuration
+correlation:
+  enabled: true
+  rules_path: ${CORRELATION_RULES_PATH:-./config/correlation_rules/}
+  default_threshold: ${DEFAULT_CORRELATION_THRESHOLD:-5}
+  time_window: ${CORRELATION_TIME_WINDOW:-300}  # seconds
+  
+# Alerting Configuration
+alerting:
+  enabled: true
+  rate_limiting:
+    enabled: true
+    max_alerts_per_hour: ${MAX_ALERTS_PER_HOUR:-100}
+    alert_cooldown: ${ALERT_COOLDOWN:-300}  # seconds
+  providers:
+    email:
+      enabled: ${EMAIL_ALERTS_ENABLED:-false}
+      smtp_server: ${SMTP_SERVER}
+      smtp_port: ${SMTP_PORT:-587}
+      use_tls: ${SMTP_USE_TLS:-true}
+      username: ${SMTP_USERNAME}
+      password: ${SMTP_PASSWORD}  # Must be set in environment
+      from: ${ALERT_FROM_EMAIL}
+      to: ${ALERT_TO_EMAILS}  # Comma-separated list
+    slack:
+      enabled: ${SLACK_ALERTS_ENABLED:-false}
+      webhook_url: ${SLACK_WEBHOOK_URL}  # Must be set in environment
+      channel: ${SLACK_CHANNEL:-#alerts}
+    webhook:
+      enabled: ${WEBHOOK_ALERTS_ENABLED:-false}
+      url: ${WEBHOOK_URL}
+      timeout: ${WEBHOOK_TIMEOUT:-10}  # seconds
+
+# EDR Configuration
+edr:
+  enabled: true
+  
+  # Agent Configuration
+  agent:
+    check_interval: 60  # seconds between checks
+    log_level: "${EDR_LOG_LEVEL:-INFO}"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_file: "${EDR_LOG_FILE:-/var/log/edr_agent.log}"  # Path to log file
+  
+  # Detection Settings
+  detection:
+    # Process monitoring
+    monitor_processes: true
+    suspicious_keywords:
+      - "powershell -nop -c"
+      - "iex"
+      - "nishang"
+      - "mimikatz"
+      - "-enc"  # Encoded command
+    
+    # Network monitoring
+    monitor_network: true
+    suspicious_ports:
+      - 4444  # Common C2 port
+      - 8080  # Common C2 port
+      - 9001  # Common C2 port
+      - 22    # SSH
+      - 23    # Telnet
+      - 3389  # RDP
+    
+    # File system monitoring (future use)
+    monitor_files: false
+    watch_directories:
+      - "C:\\Windows\\System32"
+      - "C:\\Program Files"
+      - "C:\\ProgramData"
+  
+  # Whitelisting (future use)
+  whitelist:
+    processes: []
+    ips: []
+    domains: []
+
+# Logging Configuration
+logging:
+  file: ${LOG_FILE:-siem.log}
+  max_size_mb: ${LOG_MAX_SIZE_MB:-100}
+  backup_count: ${LOG_BACKUP_COUNT:-5}
+  compress: ${LOG_COMPRESS:-true}
+  
+# Security Configuration
+security:
+  ssl_verify: ${SSL_VERIFY:-true}
+  tls_version: ${TLS_VERSION:-TLSv1.2}
+  allowed_cidrs: ${ALLOWED_CIDRS:-0.0.0.0/0}  # Restrict API access
+  
+# Performance Configuration
+performance:
+  event_queue_size: ${EVENT_QUEUE_SIZE:-10000}
+  alert_queue_size: ${ALERT_QUEUE_SIZE:-1000}
+  batch_size: ${BATCH_SIZE:-100}
+  batch_timeout: ${BATCH_TIMEOUT:-5}  # seconds
+      channel: "#siem-alerts"
+  
+# Storage Configuration
+storage:
+  events:
+    type: elasticsearch  # elasticsearch, opensearch, or sql
+    host: localhost
+    port: 9200
+    index: siem-events-
+    username: ${ELASTIC_USER}
+    password: ${ELASTIC_PASSWORD}
+  metrics:
+    type: prometheus
+    port: 9090
+  
+# Authentication & Authorization
+auth:
+  enabled: true
+  provider: ldap  # ldap, active_directory, or database
+  ldap:
+    server: ldap://ldap.example.com
+    base_dn: dc=example,dc=com
+    user_dn: cn=users,dc=example,dc=com
+    admin_group: cn=siem_admins,ou=groups,dc=example,dc=com
+  
+# Integration Settings
+integrations:
+  threat_intel:
+    enabled: true
+    providers:
+      - name: abuseipdb
+        api_key: ${ABUSEIPDB_API_KEY}
+        enabled: true
+      - name: virustotal
+        api_key: ${VT_API_KEY}
+        enabled: true
+  ticketing:
+    enabled: true
+    provider: servicenow  # servicenow, jira, or custom
+    servicenow:
+      instance: your-instance.service-now.com
+      username: ${SNOW_USER}
+      password: ${SNOW_PASSWORD}
+  
+# Module-Specific Configurations
+modules:
+  edr:
+    enabled: true
+    scan_interval: 300  # seconds
+    max_processes: 1000
+  ndr:
+    enabled: true
+    interface: any
+    promiscuous: true
+  dlp:
+    enabled: true
+    scan_directories:
+      - /home/
+      - C:\\Users\\
+    file_types:
+      - "*.doc"
+      - "*.docx"
+      - "*.xls"
+      - "*.xlsx"
+      - "*.pdf"
+      - "*.txt"
+  fim:
+    enabled: true
+    monitor_paths:
+      - /etc/
+      - /bin/
+      - /usr/bin/
+      - C:\\Windows\\System32\\
+    exclude_paths:
+      - "**/temp/**"
+      - "**/tmp/**"
+  hips:
+    enabled: true
+    protect_critical_paths: true
+    prevent_unauthorized_execution: true
+  nips:
+    enabled: true
+    mode: detect  # detect or prevent
+    block_duration: 3600  # seconds to block malicious IPs
+  compliance:
+    enabled: true
+    standards:
+      - gdpr
+      - hipaa
+      - pci_dss
+      - sox
+    scan_schedule: "0 0 * * *"  # Daily at midnight
+
+# Dashboard Configuration
+dashboard:
+  enabled: true
+  port: 8000
+  auth_required: true
+  theme: dark  # dark or light
+  refresh_interval: 30  # seconds
+  
+# API Configuration
+api:
+  enabled: true
+  host: 0.0.0.0
+  port: 5000
+  cors_enabled: true
+  rate_limit: "100 per minute"
+  api_keys:
+    - ${SIEM_API_KEY}
+
+# Logging Configuration
+logging:
+  console:
+    enabled: true
+    level: INFO
+  file:
+    enabled: true
+    path: /var/log/siem/siem.log
+    max_size: 100  # MB
+    backup_count: 5
+  syslog:
+    enabled: false
+    address: /dev/log
+    facility: local0
+
+# Maintenance Settings
+maintenance:
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention_days: 30
+  cleanup:
+    enabled: true
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    max_age_days: 90

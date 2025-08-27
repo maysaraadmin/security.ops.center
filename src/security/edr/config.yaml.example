@@ -1,0 +1,242 @@
+# EDR Agent Configuration Example
+
+# Server connection settings
+server:
+  url: "http://localhost:8000"  # EDR server URL
+  api_key: "your-api-key"       # API key for authentication
+  heartbeat_interval: 300       # Seconds between heartbeats
+  timeout: 30                   # Request timeout in seconds
+  retry_attempts: 3             # Number of retry attempts for failed requests
+  retry_delay: 5                # Delay between retries in seconds
+
+# Agent identification
+agent:
+  id: "auto"                    # Auto-generate if not specified
+  name: "${HOSTNAME}"           # Use environment variable for hostname
+  tags:                         # Custom tags for this agent
+    - "windows"
+    - "production"
+    - "department:security"
+
+# Monitoring configuration
+monitoring:
+  # Process monitoring
+  process:
+    enabled: true
+    scan_interval: 10           # Seconds between process scans
+    track_children: true        # Track child processes
+    max_processes: 1000         # Maximum number of processes to track
+    
+    # Process filtering
+    include_all: true           # Include all processes by default
+    exclude_paths:              # Paths to exclude from monitoring
+      - "/usr/bin/**"
+      - "/usr/sbin/**"
+    exclude_names:              # Process names to exclude
+      - "systemd"
+      - "sshd"
+  
+  # File system monitoring
+  filesystem:
+    enabled: true
+    scan_interval: 60           # Full scan interval in seconds
+    realtime: true              # Use inotify/ReadDirectoryChangesW for real-time monitoring
+    
+    # Directories to monitor
+    watch_paths:
+      - path: "/etc"
+        recursive: true
+        events: ["create", "modify", "delete"]
+      - path: "/usr/bin"
+        recursive: true
+        events: ["create", "delete"]
+      - path: "C:\\Windows\\System32"
+        recursive: false
+        events: ["create", "modify"]
+    
+    # File types to monitor (extensions)
+    include_extensions:
+      - ".exe"
+      - ".dll"
+      - ".so"
+      - ".sh"
+      - ".ps1"
+      - ".py"
+    
+    # File size limits (in bytes)
+    max_file_size: 104857600  # 100MB
+  
+  # Network monitoring
+  network:
+    enabled: true
+    capture_dns: true
+    capture_http: true
+    capture_https_metadata: true  # Only metadata, not content
+    
+    # Ports to monitor
+    monitor_ports:
+      - 22    # SSH
+      - 80    # HTTP
+      - 443   # HTTPS
+      - 3389  # RDP
+    
+    # IP ranges to monitor (CIDR notation)
+    monitor_ip_ranges:
+      - "0.0.0.0/0"  # All IPv4
+      - "::/0"       # All IPv6
+    
+    # IPs to exclude from monitoring
+    exclude_ips:
+      - "127.0.0.1"
+      - "::1"
+
+# Detection configuration
+detection:
+  # YARA rules configuration
+  yara:
+    enabled: true
+    rules_path: "/etc/edr/rules"
+    update_interval: 3600  # Check for rule updates every hour
+  
+  # Signature-based detection
+  signatures:
+    enabled: true
+    update_interval: 3600
+    sources:
+      - url: "https://example.com/signatures/latest"
+        api_key: "your-signature-api-key"
+  
+  # Behavioral detection
+  behavioral:
+    enabled: true
+    
+    # Process behavior monitoring
+    process_behavior:
+      monitor_process_hollowing: true
+      monitor_code_injection: true
+      monitor_privilege_escalation: true
+    
+    # Network behavior monitoring
+    network_behavior:
+      detect_port_scans: true
+      detect_brute_force: true
+      detect_dns_tunneling: true
+
+# Response configuration
+response:
+  # Automated response actions
+  actions:
+    - type: "log"  # Always log detections
+    - type: "alert"
+      severity: ["medium", "high", "critical"]
+    - type: "kill_process"
+      severity: ["high", "critical"]
+      conditions:
+        - "event_type == 'process_start'"
+    - type: "quarantine_file"
+      severity: ["high", "critical"]
+      conditions:
+        - "event_type == 'file_create'"
+  
+  # Quarantine settings
+  quarantine:
+    enabled: true
+    path: "/var/lib/edr/quarantine"
+    max_size: 1073741824  # 1GB
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "/var/log/edr/agent.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+  syslog:
+    enabled: false
+    address: "/dev/log"
+    facility: "local0"
+  console: true
+
+# Performance settings
+performance:
+  max_cpu_percent: 30      # Max CPU usage percentage
+  max_memory_mb: 256       # Max memory usage in MB
+  worker_threads: 4        # Number of worker threads
+  queue_size: 1000         # Max events in queue
+
+# Update settings
+updates:
+  enabled: true
+  channel: "stable"        # stable, beta, alpha
+  check_interval: 86400    # Check for updates every 24 hours
+  automatic: true          # Automatically install updates
+
+# Advanced settings
+advanced:
+  debug: false
+  profiling: false
+  dump_memory_on_crash: true
+  upload_dumps: true
+  
+  # Data collection
+  collect_hashes: true
+  collect_pe_metadata: true
+  collect_dns_queries: true
+  
+  # Network settings
+  proxy: ""  # e.g., "http://proxy.example.com:8080"
+  ssl_verify: true
+  
+  # Data retention
+  max_event_age: 30  # Days to keep events
+  max_alert_age: 90  # Days to keep alerts
+
+# Custom user-defined variables
+# These can be referenced in rules and configurations using ${var_name}
+variables:
+  critical_servers:
+    - "10.0.0.1"
+    - "10.0.0.2"
+  allowed_domains:
+    - "example.com"
+    - "example.org"
+
+# Environment-specific overrides
+# These sections can be conditionally included based on environment variables
+# Example: Include a section with `export ENV=production` before starting the agent
+environments:
+  development:
+    logging:
+      level: "DEBUG"
+    debug: true
+    
+  production:
+    logging:
+      level: "WARNING"
+    debug: false
+    updates:
+      automatic: false
+
+# Extension modules to load
+# These can provide additional detection capabilities or integrations
+extensions:
+  - name: "crowdstrike"
+    enabled: false
+    config:
+      api_key: ""
+  - name: "virustotal"
+    enabled: false
+    config:
+      api_key: ""
+      upload_samples: false
+
+# Compliance frameworks to enforce
+compliance:
+  - name: "PCI DSS"
+    enabled: true
+    requirements:
+      - "10.2"  # Implement automated audit trails
+      - "11.4"  # Use intrusion detection systems
+  - name: "GDPR"
+    enabled: true
+    requirements:
+      - "Article 32"  # Security of processing

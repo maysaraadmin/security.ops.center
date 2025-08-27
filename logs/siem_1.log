@@ -1,0 +1,166 @@
+2025-08-26 22:08:22,383 - siem.headless - INFO - Starting SIEM in headless mode...
+2025-08-26 22:08:23,843 - siem.headless - ERROR - Error: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\config.py", line 89, in load_config
+    return SIEMConfig(**config_data)
+  File "C:\Users\T\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 214, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_headless_fixed.py", line 37, in main
+    config = load_config("config/siem.yaml")
+  File "D:\security.operations.center\src\siem\config.py", line 91, in load_config
+    raise ValueError(f"Invalid configuration: {str(e)}")
+ValueError: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+2025-08-26 22:09:13,187 - siem.headless - INFO - Starting SIEM in headless mode...
+2025-08-26 22:09:13,884 - siem.headless - ERROR - Error: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\config.py", line 89, in load_config
+    return SIEMConfig(**config_data)
+  File "C:\Users\T\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 214, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_headless_fixed.py", line 37, in main
+    config = load_config("config/siem.yaml")
+  File "D:\security.operations.center\src\siem\config.py", line 91, in load_config
+    raise ValueError(f"Invalid configuration: {str(e)}")
+ValueError: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+2025-08-26 22:10:00,930 - siem.headless - INFO - Starting SIEM in headless mode...
+2025-08-26 22:10:01,836 - siem.headless - ERROR - Error: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\config.py", line 89, in load_config
+    return SIEMConfig(**config_data)
+  File "C:\Users\T\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 214, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_headless_clean.py", line 38, in main
+    config = load_config("config/siem.yaml")
+  File "D:\security.operations.center\src\siem\config.py", line 91, in load_config
+    raise ValueError(f"Invalid configuration: {str(e)}")
+ValueError: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+2025-08-26 22:10:31,846 - siem.headless - INFO - Starting SIEM in headless mode...
+2025-08-26 22:10:32,526 - siem.headless - ERROR - Error: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\config.py", line 89, in load_config
+    return SIEMConfig(**config_data)
+  File "C:\Users\T\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 214, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_headless_clean.py", line 38, in main
+    config = load_config("config/siem.yaml")
+  File "D:\security.operations.center\src\siem\config.py", line 91, in load_config
+    raise ValueError(f"Invalid configuration: {str(e)}")
+ValueError: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+2025-08-26 22:13:53,465 - siem.launcher - INFO - Starting SIEM...
+2025-08-26 22:13:57,021 - siem.launcher - INFO - Loading configuration from config\siem.yaml
+2025-08-26 22:13:57,169 - siem.launcher - ERROR - Error: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\config.py", line 89, in load_config
+    return SIEMConfig(**config_data)
+  File "C:\Users\T\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 214, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_siem.py", line 40, in main
+    config = load_config(str(config_path))
+  File "D:\security.operations.center\src\siem\config.py", line 91, in load_config
+    raise ValueError(f"Invalid configuration: {str(e)}")
+ValueError: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin sysmon not found in plugins directory [type=value_error, input_value=['sysmon', 'windows_events', 'firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+2025-08-26 22:14:24,472 - siem.launcher - INFO - Starting SIEM...
+2025-08-26 22:14:25,356 - siem.launcher - INFO - Loading configuration from config\siem.yaml
+2025-08-26 22:14:25,420 - siem.launcher - INFO - Initializing SIEM...
+2025-08-26 22:14:25,421 - siem.launcher - ERROR - Error: SIEM.__init__() got an unexpected keyword argument 'headless'
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_siem.py", line 44, in main
+    siem = SIEM(config=config, headless=True)
+TypeError: SIEM.__init__() got an unexpected keyword argument 'headless'
+2025-08-26 22:15:29,988 - siem.launcher - INFO - Starting SIEM...
+2025-08-26 22:15:30,825 - siem.launcher - INFO - Loading configuration from config\siem_local.yaml
+2025-08-26 22:15:30,831 - siem.launcher - ERROR - Error: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin src.siem.plugins.sysmon not found in plugins directories. Tried: ['plugins\\src.siem.plugins.sysmon.py', 'src\\siem\\plugins\\src.siem.plugins.sysmon.py'] [type=value_error, input_value=['src.siem.plugins.sysmon....siem.plugins.firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\config.py", line 101, in load_config
+    return SIEMConfig(**config_data)
+  File "C:\Users\T\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 214, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin src.siem.plugins.sysmon not found in plugins directories. Tried: ['plugins\\src.siem.plugins.sysmon.py', 'src\\siem\\plugins\\src.siem.plugins.sysmon.py'] [type=value_error, input_value=['src.siem.plugins.sysmon....siem.plugins.firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_siem.py", line 44, in main
+    config = load_config(str(config_path))
+  File "D:\security.operations.center\src\siem\config.py", line 103, in load_config
+    raise ValueError(f"Invalid configuration: {str(e)}")
+ValueError: Invalid configuration: 1 validation error for SIEMConfig
+plugins
+  Value error, Plugin src.siem.plugins.sysmon not found in plugins directories. Tried: ['plugins\\src.siem.plugins.sysmon.py', 'src\\siem\\plugins\\src.siem.plugins.sysmon.py'] [type=value_error, input_value=['src.siem.plugins.sysmon....siem.plugins.firewall'], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error

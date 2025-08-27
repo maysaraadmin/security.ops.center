@@ -1,0 +1,95 @@
+# EDR (Endpoint Detection and Response) Configuration
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/edr.log"
+
+# EDR specific configuration
+edr:
+  # General settings
+  host: "0.0.0.0"
+  port: 5002
+  debug: false
+  
+  # Agent settings
+  agent:
+    checkin_interval: 300  # seconds
+    max_offline_time: 900  # seconds before considering an agent offline
+    
+  # Detection settings
+  detection:
+    # Process monitoring
+    process_monitoring:
+      enabled: true
+      scan_interval: 60  # seconds
+      
+    # File system monitoring
+    filesystem_monitoring:
+      enabled: true
+      scan_interval: 300  # seconds
+      excluded_paths:
+        - "/System/Volumes/Data/System"
+        - "/proc"
+        - "/sys"
+        - "/dev"
+        
+    # Network monitoring
+    network_monitoring:
+      enabled: true
+      
+    # Memory scanning
+    memory_scanning:
+      enabled: true
+      scan_interval: 600  # seconds
+      
+  # Response actions
+  response:
+    # Quarantine settings
+    quarantine:
+      enabled: true
+      path: "/var/quarantine"
+      
+    # Process termination
+    terminate_process:
+      enabled: true
+      
+    # Network isolation
+    network_isolation:
+      enabled: true
+      
+  # Integration with SIEM
+  siem:
+    enabled: true
+    host: "localhost"
+    port: 5001
+    
+  # Update settings
+  updates:
+    enabled: true
+    check_interval: 3600  # seconds
+    url: "https://updates.your-edr.com"
+    
+  # API settings
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 5002
+    secret_key: "your-edr-secret-key-here"
+    
+  # Alerting settings
+  alerting:
+    email:
+      enabled: false
+      smtp_host: "smtp.example.com"
+      smtp_port: 587
+      smtp_user: "user@example.com"
+      smtp_password: "your-password"
+      from_email: "edr-alerts@yourdomain.com"
+      to_emails: ["security-team@yourdomain.com"]
+    
+    # Webhook for alert notifications
+    webhook:
+      enabled: false
+      url: "https://your-webhook-url.com/edr-alert"

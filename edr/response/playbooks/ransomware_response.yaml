@@ -1,0 +1,186 @@
+# Ransomware Response Playbook
+# This playbook defines the response actions to take when ransomware is detected
+
+id: ransomware_response
+name: "Ransomware Detection and Containment"
+description: |
+  This playbook is triggered when ransomware activity is detected on an endpoint.
+  It isolates the endpoint, terminates malicious processes, and takes steps to
+  contain the threat.
+
+tags:
+  - ransomware
+  - critical
+  - containment
+
+# Conditions that must be met for this playbook to execute
+conditions:
+  - field: "severity"
+    operator: "in"
+    value: ["high", "critical"]
+  - field: "type"
+    operator: "equals"
+    value: "ransomware"
+
+# Actions to execute in order
+actions:
+  # 1. Isolate the endpoint from the network
+  - action: "isolate_endpoint"
+    name: "Isolate Endpoint"
+    description: "Disconnect the endpoint from the network to prevent lateral movement"
+    parameters:
+      # No parameters needed for basic isolation
+    enabled: true
+    
+  # 2. Kill the malicious process
+  - action: "kill_process"
+    name: "Terminate Malicious Process"
+    description: "Terminate the process associated with the ransomware"
+    parameters:
+      pid: "{{process_id}}"  # Process ID from alert
+      force: true
+    enabled: true
+    
+  # 3. Quarantine the malicious file
+  - action: "quarantine_file"
+    name: "Quarantine Malicious File"
+    description: "Move the malicious file to a secure quarantine location"
+    parameters:
+      path: "{{file_path}}"  # Path to the malicious file
+      quarantine_dir: "/var/lib/edr/quarantine"
+    enabled: true
+    
+  # 4. Block the C2 server IP
+  - action: "block_ip"
+    name: "Block C2 Server"
+    description: "Block communication with the command and control server"
+    parameters:
+      ip: "{{source_ip}}"  # IP address of the C2 server
+      direction: "both"
+      duration: 1440  # Block for 24 hours (in minutes)
+    enabled: true
+    
+  # 5. Create a system restore point (Windows)
+  - action: "execute_command"
+    name: "Create System Restore Point"
+    description: "Create a system restore point before making any changes"
+    parameters:
+      command: "powershell -Command \"Checkpoint-Computer -Description 'EDR Ransomware Response' -RestorePointType MODIFY_SETTINGS\""
+      shell: true
+    enabled: true
+    platform: "windows"  # Only run on Windows
+    
+  # 6. Scan for additional indicators of compromise
+  - action: "execute_command"
+    name: "Scan for IOCs"
+    description: "Run a scan for additional indicators of compromise"
+    parameters:
+      command: "edr-scan --full --ioc"
+      shell: true
+    enabled: true
+    
+  # 7. Collect forensic evidence
+  - action: "execute_command"
+    name: "Collect Forensic Evidence"
+    description: "Collect forensic evidence for further analysis"
+    parameters:
+      command: "edr-forensics collect --output /var/lib/edr/evidence/{{timestamp}}"
+      shell: true
+    enabled: true
+    
+  # 8. Notify the security team
+  - action: "send_notification"
+    name: "Notify Security Team"
+    description: "Send an alert to the security team"
+    parameters:
+      message: |
+        🚨 RANSOMWARE DETECTED 🚨
+        
+        Host: {{hostname}}
+        User: {{username}}
+        Severity: {{severity}}
+        
+        Malicious process: {{process_name}} (PID: {{process_id}})
+        File: {{file_path}}
+        C2 Server: {{source_ip}}
+        
+        Actions taken:
+        - Endpoint isolated from network
+        - Malicious process terminated
+        - Malicious file quarantined
+        - C2 server blocked
+        - Forensic evidence collected
+        
+        Please investigate immediately!
+      recipients:
+        - "security-team@example.com"
+        - "incident-response@example.com"
+      priority: "high"
+    enabled: true
+    
+  # 9. Create an incident ticket
+  - action: "create_ticket"
+    name: "Create Incident Ticket"
+    description: "Create a ticket in the ticketing system"
+    parameters:
+      title: "[Ransomware] {{hostname}} - {{process_name}}"
+      description: |
+        Ransomware detected on {{hostname}} ({{ip_address}})
+        
+        Details:
+        - Process: {{process_name}} (PID: {{process_id}})
+        - File: {{file_path}}
+        - C2 Server: {{source_ip}}
+        - User: {{username}}
+        - Alert ID: {{alert_id}}
+        
+        Status: Contained - Endpoint isolated and process terminated
+      priority: "high"
+      tags: ["ransomware", "contained"]
+    enabled: true
+    
+  # 10. Run a full system scan
+  - action: "execute_command"
+    name: "Full System Scan"
+    description: "Run a full system scan to ensure complete remediation"
+    parameters:
+      command: "edr-scan --full --remediate"
+      shell: true
+    enabled: true
+    
+# Post-execution actions
+post_actions:
+  # These actions run after all main actions complete
+  - action: "send_notification"
+    name: "Response Complete"
+    description: "Notify that the response is complete"
+    parameters:
+      message: |
+        ✅ Ransomware response actions completed on {{hostname}}
+        
+        Summary:
+        - Endpoint isolated: {{actions.isolate_endpoint.success}}
+        - Process terminated: {{actions.kill_process.success}}
+        - File quarantined: {{actions.quarantine_file.success}}
+        - C2 server blocked: {{actions.block_ip.success}}
+        
+        Next steps:
+        1. Investigate the incident
+        2. Restore any affected files from backup
+        3. Reimage the endpoint if necessary
+      recipients:
+        - "security-team@example.com"
+      priority: "normal"
+    enabled: true
+
+# Metadata
+version: 1.0.0
+author: "EDR Security Team"
+created: "2023-01-01"
+last_updated: "2023-01-15"
+
+# Documentation
+documentation: |
+  This playbook is designed to respond to ransomware incidents by containing the threat,
+  collecting evidence, and notifying the appropriate teams. It should be reviewed and
+  tested regularly to ensure it remains effective against current threats.

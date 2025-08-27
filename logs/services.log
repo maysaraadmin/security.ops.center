@@ -1,0 +1,9 @@
+2025-08-26 23:29:27,819 - services_launcher - INFO - Starting SIEM service: C:\Users\T\AppData\Local\Programs\Python\Python313\python.exe launch_siem.py
+2025-08-26 23:29:28,030 - services_launcher - INFO - Starting EDR service: C:\Users\T\AppData\Local\Programs\Python\Python313\python.exe launch_minimal.py
+2025-08-26 23:29:28,319 - services_launcher - INFO - Both services started. Press Ctrl+C to stop.
+2025-08-26 23:29:28,563 - services_launcher - INFO - SIEM: 2025-08-26 23:29:28,563 - siem_launcher - INFO - Starting SIEM component...
+2025-08-26 23:29:28,717 - services_launcher - INFO - EDR: 2025-08-26 23:29:28,717 - siem.launcher - INFO - Starting minimal SIEM launcher...
+2025-08-26 23:29:29,582 - services_launcher - INFO - SIEM: 2025-08-26 23:29:29,578 - siem_launcher - ERROR - Error launching SIEM: Failed to initialize SIEM: Configuration error: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'dict'
+2025-08-26 23:29:29,987 - services_launcher - INFO - EDR: 2025-08-26 23:29:29,986 - siem.launcher - INFO - Initializing SIEM...
+2025-08-26 23:29:30,091 - services_launcher - ERROR - SIEM service has stopped
+2025-08-26 23:29:30,093 - services_launcher - INFO - All services have been stopped

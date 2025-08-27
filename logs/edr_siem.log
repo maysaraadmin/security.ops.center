@@ -1,0 +1,55 @@
+2025-08-26 23:27:39,502 - edr_siem_launcher - INFO - Starting EDR and SIEM services...
+2025-08-26 23:27:39,522 - edr_siem_launcher - INFO - Starting EDR service...
+2025-08-26 23:27:39,599 - edr_siem_launcher - ERROR - Failed to start EDR service: signal only works in main thread of the main interpreter
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_edr_siem.py", line 30, in run_edr
+    return run_edr()
+  File "D:\security.operations.center\src\edr\launcher.py", line 118, in run_edr
+    launcher = EDRLauncher(config)
+  File "D:\security.operations.center\src\edr\launcher.py", line 28, in __init__
+    super().__init__(config)
+    ~~~~~~~~~~~~~~~~^^^^^^^^
+  File "D:\security.operations.center\src\core\base_launcher.py", line 27, in __init__
+    signal.signal(signal.SIGINT, self._handle_shutdown)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\T\AppData\Local\Programs\Python\Python313\Lib\signal.py", line 58, in signal
+    handler = _signal.signal(_enum_to_int(signalnum), _enum_to_int(handler))
+ValueError: signal only works in main thread of the main interpreter
+2025-08-26 23:27:40,337 - edr_siem_launcher - INFO - Starting SIEM service...
+2025-08-26 23:27:40,339 - edr_siem_launcher - ERROR - Failed to start SIEM service: Failed to initialize SIEM: Configuration error: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'dict'
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\launcher.py", line 210, in _load_config
+    return load_config(config_path)
+  File "D:\security.operations.center\src\siem\config.py", line 83, in load_config
+    config_path = Path(config_path).absolute()
+                  ~~~~^^^^^^^^^^^^^
+  File "C:\Users\T\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 503, in __init__
+    super().__init__(*args)
+    ~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\T\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 132, in __init__
+    raise TypeError(
+    ...<2 lines>...
+        f"not {type(path).__name__!r}")
+TypeError: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'dict'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\src\siem\launcher.py", line 167, in __init__
+    self.config = self._load_config(config_path)
+                  ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "D:\security.operations.center\src\siem\launcher.py", line 212, in _load_config
+    raise ConfigurationError(f"Configuration error: {str(e)}") from e
+src.siem.launcher.ConfigurationError: Configuration error: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'dict'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\security.operations.center\run_edr_siem.py", line 40, in run_siem
+    return run_siem()
+  File "D:\security.operations.center\src\siem\launcher.py", line 435, in run_siem
+    launcher = SIEMLauncher(config)
+  File "D:\security.operations.center\src\siem\launcher.py", line 195, in __init__
+    raise InitializationError(f"Failed to initialize SIEM: {str(e)}") from e
+src.siem.launcher.InitializationError: Failed to initialize SIEM: Configuration error: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'dict'
+2025-08-26 23:27:40,362 - edr_siem_launcher - ERROR - SIEM service has stopped. Shutting down...

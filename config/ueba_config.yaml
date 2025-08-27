@@ -1,0 +1,86 @@
+# UEBA Configuration
+
+# Base configuration for the UEBA engine
+engine:
+  alert_threshold: 0.9  # Score above which to generate alerts
+  
+# Configuration for base behavior models
+models:
+  - id: 'user_behavior'
+    type: 'user'
+    name: 'User Behavior Model'
+    contamination: 0.01
+    training_interval_hours: 24
+    min_training_samples: 1000
+    
+  - id: 'entity_behavior'
+    type: 'entity'
+    name: 'Entity Behavior Model'
+    contamination: 0.005
+    training_interval_hours: 24
+    min_training_samples: 5000
+
+# Configuration for failed login detector
+failed_login_config:
+  window_minutes: 15
+  failed_attempts_threshold: 5
+  whitelisted_ips:
+    - '10.0.0.1'
+    - '192.168.1.1'
+
+# Configuration for data exfiltration detector
+exfiltration_config:
+  suspicious_domains:
+    - 'exfiltrate.example.com'
+    - 'malicious-server.org'
+  sensitive_data_patterns:
+    - '\\b(?:ssn|social security|credit\\s*card|password|api[_-]?key)\\b'
+    - '\\b\\d{3}[\\.-]?\\d{2}[\\.-]?\\d{4}\\b'  # SSN-like patterns
+    - '\\b\\d{4}[\\.-]?\\d{4}[\\.-]?\\d{4}[\\.-]?\\d{4}\\b'  # Credit card-like
+
+# Configuration for privilege escalation detector
+privilege_config:
+  privileged_commands:
+    - 'sudo'
+    - 'su'
+    - 'runas'
+    - 'psexec'
+    - 'schtasks'
+    - 'at'
+    - 'crontab'
+
+# Configuration for insider threat detector
+insider_threat_config:
+  activity_window_days: 30
+  risk_threshold: 0.8
+
+# Alerting configuration
+alerting:
+  email:
+    enabled: true
+    smtp_server: 'smtp.example.com'
+    smtp_port: 587
+    username: 'alerts@example.com'
+    password: 'your_password_here'
+    from_address: 'ueba-alerts@example.com'
+    to_addresses:
+      - 'security-team@example.com'
+      - 'soc@example.com'
+    
+  slack:
+    enabled: false
+    webhook_url: 'https://hooks.slack.com/services/...'
+    channel: '#security-alerts'
+
+# Storage configuration
+storage:
+  model_dir: 'models/ueba'
+  event_retention_days: 90
+  alert_retention_days: 365
+
+# Logging configuration
+logging:
+  level: 'INFO'
+  file: 'logs/ueba.log'
+  max_size_mb: 100
+  backup_count: 5

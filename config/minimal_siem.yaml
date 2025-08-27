@@ -1,0 +1,44 @@
+# Minimal SIEM Configuration
+
+# Logging configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/siem.log"
+
+# SIEM specific configuration
+siem:
+  # General settings
+  host: "0.0.0.0"
+  port: 5000
+  debug: true
+  
+  # Disable all plugins
+  plugins: []
+  
+  # Disable all components
+  log_collector:
+    enabled: false
+  correlation:
+    enabled: false
+  edr:
+    enabled: false
+  ndr:
+    enabled: false
+  dlp:
+    enabled: false
+  fim:
+    enabled: false
+  hips:
+    enabled: false
+  nips:
+    enabled: false
+  compliance:
+    enabled: false
+  monitoring:
+    enabled: false
+    
+  # Storage settings (minimal)
+  storage:
+    type: "sqlite"
+    database: "data/siem_minimal.db"

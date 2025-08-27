@@ -1,0 +1,56 @@
+# SIEM Local Development Configuration
+# This is a development configuration for the SIEM component.
+
+# Logging configuration
+logging:
+  level: DEBUG
+  file: logs/siem_dev.log
+  max_size: 10  # MB
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Database configuration
+database:
+  url: sqlite:///data/siem_dev.db  # SQLite database for development
+  pool_size: 5
+  max_overflow: 10
+  echo: true  # Enable SQL query logging for debugging
+
+# API server configuration
+api:
+  host: 127.0.0.1
+  port: 8080  # Changed to 8080 to avoid conflicts
+  debug: true  # Enable debug mode for development
+  secret_key: "dev-secret-key-change-in-production"
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+    - "http://localhost:8080"
+
+# List of enabled plugins (using relative paths for development)
+plugins:
+  - src.siem.plugins.sysmon
+  - src.siem.plugins.windows_events
+  - src.siem.plugins.firewall
+
+# Plugin-specific configurations
+plugins_config:
+  sysmon:
+    log_path: "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-Sysmon%4Operational.evtx"
+    refresh_interval: 10  # seconds
+  
+  windows_events:
+    channels:
+      - Security
+      - System
+      - Application
+    
+  firewall:
+    log_path: "C:\\Windows\\System32\\LogFiles\\Firewall\\pfirewall.log"
+    refresh_interval: 15  # seconds
+
+# Development-specific settings
+dev:
+  enable_mock_data: true  # Enable mock data for testing
+  log_level: DEBUG
+  reload: true  # Enable auto-reload for development

@@ -1,0 +1,180 @@
+# Behavioral Threat Detection Configuration
+
+# Detection sensitivity thresholds (0.0 - 1.0)
+suspicious_score_threshold: 0.7
+malicious_score_threshold: 0.9
+
+# Enable/disable specific detection modules
+enabled_detectors:
+  suspicious_process: true
+  obfuscated_commands: true
+  process_hollowing: true
+  suspicious_children: true
+  credential_dumping: true
+  suspicious_network: true
+
+# File monitoring settings
+file_monitoring:
+  scan_memory: true
+  scan_process_images: true
+  scan_loaded_modules: true
+  scan_threads: true
+
+# Network monitoring settings
+network_monitoring:
+  check_domains: true
+  check_ips: true
+  check_ports: true
+  check_http_user_agents: true
+
+# Suspicious domains and IPs (can be regex patterns)
+suspicious_indicators:
+  domains:
+    - "\.onion$"
+    - "\.xyz$"
+    - "\.top$"
+    - "\.gq$"
+    - "\.ml$"
+    - "\.cf$"
+    - "\.ga$"
+    - "\.tk$"
+  
+  ip_ranges:
+    - "192.168.0.0/16"  # Private network
+    - "10.0.0.0/8"      # Private network
+    - "172.16.0.0/12"   # Private network
+    - "100.64.0.0/10"   # Shared address space
+    - "169.254.0.0/16"  # Link-local
+    - "224.0.0.0/4"     # Multicast
+    - "240.0.0.0/4"     # Reserved
+
+# Known good hashes (in production, this would be in a database)
+known_hashes: []
+
+# Logging settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "/var/log/edr/threat_detector.log"
+  max_size_mb: 100
+  backup_count: 3
+
+# Alerting settings
+alerting:
+  enabled: true
+  email:
+    enabled: true
+    smtp_server: "smtp.example.com"
+    smtp_port: 587
+    use_tls: true
+    username: "alerts@example.com"
+    password: "your_password_here"
+    recipients:
+      - "security-team@example.com"
+      - "soc@example.com"
+  
+  # Webhook for SIEM/SOAR integration
+  webhook:
+    enabled: true
+    url: "https://siem.example.com/api/alerts"
+    auth_token: "your_auth_token_here"
+    verify_ssl: true
+
+# Correlation settings
+correlation:
+  # Time window for correlating related events (in seconds)
+  correlation_window: 300
+  
+  # Enable/disable correlation rules
+  rules:
+    multiple_suspicious_events: true
+    suspicious_followed_by_network: true
+    suspicious_process_with_network: true
+    suspicious_file_activity: true
+
+# Update settings
+updates:
+  # Update threat intelligence feeds
+  threat_intel:
+    enabled: true
+    url: "https://threatintel.example.com/feed"
+    update_interval: 3600  # seconds
+    api_key: "your_api_key_here"
+  
+  # Update detection rules
+  rules:
+    enabled: true
+    url: "https://rules.example.com/edr/rules.json"
+    update_interval: 86400  # daily
+    api_key: "your_api_key_here"
+
+# Memory analysis settings
+memory_analysis:
+  enabled: true
+  scan_interval: 300  # seconds
+  max_scan_size_mb: 1024  # Maximum process memory to scan (MB)
+  scan_for:
+    shellcode: true
+    injected_code: true
+    unhooked_functions: true
+    api_hooking: true
+
+# Process behavior analysis
+process_analysis:
+  enabled: true
+  monitor_api_calls: true
+  suspicious_apis:
+    - "VirtualAlloc"
+    - "VirtualProtect"
+    - "WriteProcessMemory"
+    - "CreateRemoteThread"
+    - "SetWindowsHookEx"
+    - "SetWinEventHook"
+    - "NtCreateThreadEx"
+    - "NtQueueApcThread"
+    - "NtSetContextThread"
+
+# Registry monitoring
+registry_monitoring:
+  enabled: true
+  monitor_paths:
+    - "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+    - "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+    - "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+    - "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+    - "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Scripts"
+    - "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Shell"
+    - "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Userinit"
+
+# PowerShell monitoring
+powershell_monitoring:
+  enabled: true
+  script_block_logging: true
+  module_logging: true
+  transcription: true
+  capture_script_content: true
+  suspicious_commands:
+    - "Invoke-Expression"
+    - "Invoke-Command"
+    - "Start-Process"
+    - "New-Object"
+    - "DownloadString"
+    - "WebClient"
+    - "Net.WebClient"
+    - "IEX"
+    - "iex"
+    - "FromBase64String"
+
+# WMI monitoring
+wmi_monitoring:
+  enabled: true
+  monitor_events: true
+  monitor_consumers: true
+  monitor_filters: true
+
+# Scheduled tasks monitoring
+scheduled_tasks:
+  enabled: true
+  monitor_creation: true
+  monitor_modification: true
+  monitor_deletion: true
+  monitor_execution: true

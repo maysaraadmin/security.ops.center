@@ -1,0 +1,337 @@
+# Log Collector Configuration
+# This file defines the log sources and their configurations
+
+# Global settings
+global:
+  # Default encoding for text files
+  default_encoding: utf-8
+  
+  # Buffer size for reading files (in bytes)
+  read_buffer_size: 8192
+  
+  # How often to check for log rotation (in seconds)
+  rotation_check_interval: 10
+
+# Log sources configuration
+sources:
+  # System logs (Linux)
+  - id: system_logs
+    type: file
+    path: /var/log/syslog
+    description: "System logs (Linux)"
+    read_existing: true
+    watch: true
+    tags: ["system", "linux"]
+    
+  # Authentication logs (Linux)
+  - id: auth_logs
+    type: file
+    path: /var/log/auth.log
+    description: "Authentication logs (Linux)"
+    read_existing: true
+    watch: true
+    tags: ["auth", "linux"]
+  
+  # Apache access logs
+  - id: apache_access
+    type: file
+    path: /var/log/apache2/access.log
+    description: "Apache access logs"
+    read_existing: true
+    watch: true
+    tags: ["web", "apache", "access"]
+  
+  # Apache error logs
+  - id: apache_error
+    type: file
+    path: /var/log/apache2/error.log
+    description: "Apache error logs"
+    read_existing: true
+    watch: true
+    tags: ["web", "apache", "error"]
+  
+  # Windows Security logs (example, requires appropriate permissions)
+  - id: windows_security
+    type: file
+    path: C:\\Windows\\System32\\winevt\\Logs\\Security.evtx
+    description: "Windows Security Event Log"
+    read_existing: false
+    watch: false
+    tags: ["windows", "security"]
+  
+  # Application logs (custom)
+  - id: app_logs
+    type: file
+    path: /var/log/application/app.log
+    description: "Application logs"
+    read_existing: true
+    watch: true
+    tags: ["application"]
+
+# Normalization rules
+normalization:
+  # Field mappings for different log formats
+  mappings:
+    # Syslog format
+    syslog:
+      timestamp: ["timestamp", "@timestamp", "time"]
+      host: ["hostname", "host", "source_host"]
+      severity: ["level", "severity", "log_level"]
+      message: ["msg", "message", "log"]
+      process: ["process", "proc", "program"]
+      pid: ["pid", "process_id"]
+    
+    # JSON format (common fields)
+    json:
+      timestamp: ["@timestamp", "timestamp", "time", "date"]
+      host: ["host", "hostname", "source_host"]
+      severity: ["level", "severity", "log_level"]
+      message: ["message", "msg", "log"]
+      source_ip: ["src_ip", "source_ip", "client_ip", "ip"]
+      destination_ip: ["dst_ip", "destination_ip", "dest_ip"]
+      user: ["user", "username", "user_name"]
+      status: ["status", "status_code", "http_status"]
+    
+    # Windows Event Log format
+    windows_event:
+      timestamp: ["TimeGenerated", "@timestamp", "time"]
+      source: ["SourceName", "source", "provider"]
+      event_id: ["EventID", "event_id", "id"]
+      event_type: ["EventType", "type", "event_type"]
+      severity: ["Level", "level", "severity"]
+      message: ["Message", "message", "msg"]
+      user: ["User", "user", "username"]
+      computer: ["Computer", "computer_name", "host"]
+      process: ["ProcessName", "process", "exe"]
+
+# Processing pipeline
+pipeline:
+  # Pre-processing steps (applied before normalization)
+  pre_processors:
+    - type: trim_whitespace
+    - type: remove_empty_fields
+    - type: parse_json
+    - type: parse_timestamps
+  
+  # Post-processing steps (applied after normalization)
+  post_processors:
+    - type: add_fields
+      fields:
+        environment: "production"
+        siem_component: "log_collector"
+    - type: drop_fields
+      fields: ["__raw__", "__line__"]
+    - type: add_tags
+      tags: ["collected"]
+
+# Output configuration
+output:
+  # Where to send the processed logs
+  # Can be 'console', 'file', 'elasticsearch', 'kafka', etc.
+  type: console
+  
+  # Console output format (if type is console)
+  console:
+    format: "json"  # 'json' or 'text'
+    pretty: true    # Pretty-print JSON output
+  
+  # File output configuration (if type is file)
+  file:
+    path: "/var/log/siem/collected_logs.json"
+    max_size: 10485760  # 10MB
+    backup_count: 5
+  
+  # Elasticsearch output configuration (if type is elasticsearch)
+  elasticsearch:
+    hosts: ["http://localhost:9200"]
+    index: "siem-logs-%{+yyyy.MM.dd}"
+    username: "elastic"
+    password: "changeme"
+  
+  # Kafka output configuration (if type is kafka)
+  kafka:
+    brokers: ["localhost:9092"]
+    topic: "siem-logs"
+    compression_type: "gzip"
+
+# Monitoring and metrics
+monitoring:
+  # Enable Prometheus metrics endpoint
+  prometheus:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+  
+  # Health check endpoint
+  health_check:
+    enabled: true
+    port: 8080
+    path: "/health"
+
+# Alerting rules
+alert_rules:
+  # High severity errors
+  - name: "High severity error detected"
+    condition: "severity == 'error' or severity == 'critical' or severity == 'fatal'"
+    actions:
+      - type: "log"
+        message: "High severity error: {{ message }}"
+      - type: "email"
+        to: "security-team@example.com"
+        subject: "High Severity Alert: {{ source }} - {{ message[:50] }}..."
+  
+  # Multiple failed login attempts
+  - name: "Multiple failed logins"
+    condition: "'failed password' in message.lower()"
+    group_by: ["source_ip", "user"]
+    time_window: "5m"
+    threshold: 5
+    actions:
+      - type: "log"
+        level: "warning"
+        message: "Multiple failed login attempts from {{ source_ip }} for user {{ user }}"
+      - type: "block_ip"
+        ip: "{{ source_ip }}"
+        duration: "1h"
+
+# Performance tuning
+performance:
+  # Maximum number of concurrent log processors
+  max_workers: 4
+  
+  # Maximum queue size for log processing
+  max_queue_size: 10000
+  
+  # Batch size for bulk operations (e.g., Elasticsearch bulk indexing)
+  batch_size: 1000
+  
+  # Timeout for batch operations (in seconds)
+  batch_timeout: 5
+
+# Log rotation settings
+log_rotation:
+  # Enable log rotation
+  enabled: true
+  
+  # Rotation strategy: 'size', 'time', or 'both'
+  strategy: "both"
+  
+  # Rotate when file reaches this size (in bytes)
+  max_size: 10485760  # 10MB
+  
+  # Rotate daily
+  when: "midnight"
+  
+  # Keep this many backup files
+  backup_count: 7
+
+# Security settings
+security:
+  # Enable SSL/TLS for network communications
+  ssl:
+    enabled: false
+    certfile: "/path/to/cert.pem"
+    keyfile: "/path/to/key.pem"
+    ca_certs: "/path/to/ca.pem"
+    verify_mode: "required"
+  
+  # Authentication for API endpoints
+  auth:
+    enabled: true
+    username: "admin"
+    password: "changeme"
+    token_expiry: 3600  # 1 hour
+
+# Example of custom processors
+custom_processors:
+  # Add geoip information based on IP addresses
+  - type: geoip
+    source: "source_ip"
+    target: "geoip"
+    database: "/usr/share/GeoIP/GeoLite2-City.mmdb"
+  
+  # Parse user agent strings
+  - type: user_agent
+    source: "user_agent"
+    target: "user_agent_info"
+  
+  # Add fields based on conditions
+  - type: add_fields
+    if: "'error' in message.lower()"
+    fields:
+      has_error: true
+      priority: "high"
+  
+  # Drop sensitive fields
+  - type: drop_fields
+    fields: ["password", "api_key", "credit_card"]
+    ignore_missing: true
+
+# Example of custom enrichment
+enrichment:
+  # Add threat intelligence data
+  threat_intel:
+    enabled: true
+    sources:
+      - type: "abuseipdb"
+        api_key: "your_api_key_here"
+        categories: ["abuse", "malware"]
+      - type: "virustotal"
+        api_key: "your_api_key_here"
+  
+  # Add asset information
+  asset_db:
+    enabled: true
+    path: "/path/to/assets.db"
+    fields: ["hostname", "ip", "owner", "department"]
+
+# Example of custom alert actions
+alert_actions:
+  # Send alerts to Slack
+  - type: "slack"
+    webhook_url: "https://hooks.slack.com/services/..."
+    channel: "#security-alerts"
+    username: "SIEM Bot"
+    icon_emoji: ":warning:"
+  
+  # Create JIRA tickets for critical alerts
+  - type: "jira"
+    url: "https://your-domain.atlassian.net"
+    username: "siem-bot"
+    api_token: "your_api_token"
+    project: "SEC"
+    issue_type: "Incident"
+    priority_map:
+      critical: "Highest"
+      high: "High"
+      medium: "Medium"
+      low: "Low"
+
+# Example of custom correlation rules
+correlation_rules:
+  # Detect brute force attacks
+  - name: "SSH Brute Force Attempt"
+    description: "Multiple failed SSH login attempts from the same source"
+    condition: "'sshd' in source and 'failed password' in message.lower()"
+    group_by: ["source_ip"]
+    time_window: "5m"
+    threshold: 5
+    severity: "high"
+    actions:
+      - type: "alert"
+        message: "Possible SSH brute force attack from {{ source_ip }}"
+      - type: "block_ip"
+        ip: "{{ source_ip }}"
+        duration: "1h"
+  
+  # Detect port scanning
+  - name: "Port Scanning Detected"
+    description: "Multiple connection attempts to different ports from the same source"
+    condition: "'connection' in message and 'port' in message"
+    group_by: ["source_ip"]
+    time_window: "1m"
+    threshold: 20
+    severity: "medium"
+    actions:
+      - type: "alert"
+        message: "Possible port scanning from {{ source_ip }}"

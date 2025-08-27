@@ -1,0 +1,1 @@
+{"suspicious_processes": ["test_malware.exe", "suspicious_script.py", "powershell -nop -exec bypass"], "suspicious_paths": ["C:\\temp\\", "%APPDATA%\\malware"]}

@@ -1,0 +1,98 @@
+# SIEM Configuration
+# This is the main configuration file for the SIEM component.
+
+# Logging configuration
+logging:
+  level: INFO
+  file: logs/siem.log
+  max_size: 10  # MB
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Database configuration
+database:
+  url: sqlite:///data/siem.db  # SQLite by default, can be changed to PostgreSQL/MySQL
+  pool_size: 5
+  max_overflow: 10
+  echo: false
+
+# API server configuration
+api:
+  host: 0.0.0.0
+  port: 8000
+  debug: false
+  secret_key: "change-this-to-a-secure-random-string"
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+
+# List of enabled plugins
+plugins:
+  - sysmon
+  - windows_events
+  - firewall
+
+# Plugin-specific configurations
+plugins_config:
+  sysmon:
+    log_path: /var/log/sysmon/
+    refresh_interval: 60  # seconds
+  
+  windows_events:
+    channels:
+      - Security
+      - System
+      - Application
+    
+  firewall:
+    log_path: /var/log/ufw.log
+    refresh_interval: 30  # seconds
+
+# Health check settings
+health_check:
+  enabled: true
+  port: 8080  # Port for health check endpoint
+  check_interval: 60  # seconds between health checks
+  log_health_status: true
+
+# Alerting configuration
+alerting:
+  enabled: false
+  email:
+    enabled: false
+    smtp_server: smtp.example.com
+    smtp_port: 587
+    username: user@example.com
+    password: your-password
+    from: siem@example.com
+    to:
+      - admin@example.com
+  
+  # Webhook for sending alerts
+  webhook:
+    enabled: false
+    url: https://hooks.example.com/siem-alerts
+    timeout: 10  # seconds
+    verify_ssl: true
+
+# Performance settings
+performance:
+  max_threads: 10
+  queue_size: 1000
+  batch_size: 100
+  flush_interval: 5  # seconds
+
+# Retention settings
+retention:
+  days_to_keep: 90
+  compression: true
+  archive_path: /var/archives/siem/
+
+# Authentication settings
+auth:
+  enabled: true
+  jwt_secret: "change-this-to-a-secure-random-string"
+  token_expire_minutes: 1440  # 24 hours
+  password_reset_expire_minutes: 60  # 1 hour
+  max_login_attempts: 5
+  lockout_minutes: 30

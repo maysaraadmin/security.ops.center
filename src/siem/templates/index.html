@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}SIEM Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Main Content -->
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>SIEM Dashboard</h2>
+                <div id="siem-status" class="d-flex align-items-center">
+                    <span class="status-indicator status-offline me-2"></span>
+                    <span>SIEM Status: <strong>Stopped</strong></span>
+                </div>
+            </div>
+
+            <!-- Status Cards -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card status-card">
+                        <div class="card-body">
+                            <h5 class="card-title">System Health</h5>
+                            <div id="system-health">
+                                <p class="text-muted">SIEM is not running</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card status-card">
+                        <div class="card-body">
+                            <h5 class="card-title">Alerts</h5>
+                            <div id="alerts-status">
+                                <p class="text-muted">No active alerts</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card status-card">
+                        <div class="card-body">
+                            <h5 class="card-title">Components</h5>
+                            <div id="components-status">
+                                <p class="text-muted">No components running</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Panel -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Logs</h5>
+                    <button class="btn btn-sm btn-outline-secondary" id="refresh-logs">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div id="log-container" style="height: 300px; overflow-y: auto; padding: 15px; font-family: monospace; background-color: #f8f9fa;">
+                        <p class="text-muted">No logs available. Start the SIEM to see logs.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Global variables
+    let siemStatus = 'stopped';
+    let refreshInterval;
+
+    // DOM Elements
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const refreshLogsBtn = document.getElementById('refresh-logs');
+    const siemStatusElement = document.getElementById('siem-status');
+    const systemHealthElement = document.getElementById('system-health');
+    const alertsStatusElement = document.getElementById('alerts-status');
+    const componentsStatusElement = document.getElementById('components-status');
+    const logContainer = document.getElementById('log-container');
+
+    // Event Listeners
+    startBtn.addEventListener('click', startSIEM);
+    stopBtn.addEventListener('click', stopSIEM);
+    refreshLogsBtn.addEventListener('click', fetchLogs);
+
+    // Initialize
+    checkStatus();
+    fetchLogs();
+
+    // Set up auto-refresh
+    refreshInterval = setInterval(checkStatus, 5000);
+
+    // Functions
+    async function checkStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                updateUI(data.data);
+            }
+        } catch (error) {
+            console.error('Error checking status:', error);
+        }
+    }
+
+    async function startSIEM() {
+        try {
+            const response = await fetch('/api/start', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                siemStatus = 'running';
+                updateStatusUI();
+                checkStatus();
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        } catch (error) {
+            console.error('Error starting SIEM:', error);
+            alert('Failed to start SIEM. Check console for details.');
+        }
+    }
+
+    async function stopSIEM() {
+        try {
+            const response = await fetch('/api/stop', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                siemStatus = 'stopped';
+                updateStatusUI();
+                checkStatus();
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        } catch (error) {
+            console.error('Error stopping SIEM:', error);
+            alert('Failed to stop SIEM. Check console for details.');
+        }
+    }
+
+    async function fetchLogs() {
+        try {
+            // In a real implementation, this would fetch logs from your backend
+            // For now, we'll just show a placeholder
+            logContainer.innerHTML = '<p class="text-muted">Logs will appear here when SIEM is running.</p>';
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+            logContainer.innerHTML = '<p class="text-danger">Error loading logs. Check console for details.</p>';
+        }
+    }
+
+    function updateUI(status) {
+        // Update SIEM status
+        siemStatus = status.running ? 'running' : 'stopped';
+        updateStatusUI();
+
+        // Update system health
+        if (status.components) {
+            updateComponentsStatus(status.components);
+        }
+    }
+
+    function updateStatusUI() {
+        const statusIndicator = siemStatusElement.querySelector('.status-indicator');
+        const statusText = siemStatusElement.querySelector('strong');
+        
+        if (siemStatus === 'running') {
+            statusIndicator.className = 'status-indicator status-online me-2';
+            statusText.textContent = 'Running';
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        } else {
+            statusIndicator.className = 'status-indicator status-offline me-2';
+            statusText.textContent = 'Stopped';
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+    }
+
+    function updateComponentsStatus(components) {
+        let componentsHtml = '<ul class="list-unstyled">';
+        let systemHealth = 'All systems operational';
+        let alerts = [];
+        
+        for (const [name, component] of Object.entries(components)) {
+            const status = component.running ? 'running' : 'stopped';
+            const statusClass = component.running ? 'status-online' : 'status-offline';
+            
+            componentsHtml += `
+                <li class="mb-1">
+                    <span class="status-indicator ${statusClass} me-2"></span>
+                    ${name}: <strong>${status}</strong>
+                </li>
+            `;
+            
+            // Check for component errors
+            if (component.error) {
+                systemHealth = 'Some components have issues';
+                alerts.push(`${name}: ${component.error}`);
+            }
+        }
+        
+        componentsHtml += '</ul>';
+        
+        // Update components status
+        componentsStatusElement.innerHTML = componentsHtml;
+        
+        // Update system health
+        systemHealthElement.innerHTML = `
+            <p class="mb-1">${systemHealth}</p>
+            <small class="text-muted">Last checked: ${new Date().toLocaleTimeString()}</small>
+        `;
+        
+        // Update alerts
+        if (alerts.length > 0) {
+            alertsStatusElement.innerHTML = `
+                <div class="alert alert-warning p-2 mb-2">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    ${alerts.length} active alerts
+                </div>
+                <ul class="small">
+                    ${alerts.map(alert => `<li>${alert}</li>`).join('')}
+                </ul>
+            `;
+        } else {
+            alertsStatusElement.innerHTML = `
+                <p class="text-success mb-1">No active alerts</p>
+                <small class="text-muted">Last checked: ${new Date().toLocaleTimeString()}</small>
+            `;
+        }
+    }
+</script>
+{% endblock %}

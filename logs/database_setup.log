@@ -1,0 +1,27 @@
+2025-08-23 13:22:33,345 - siem.db_setup - INFO - Initializing database at: data/siem.db
+2025-08-23 13:22:33,736 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-23 13:22:33,770 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-24 11:06:56,552 - siem.db_setup - INFO - Initializing database at: data/siem.db
+2025-08-24 11:06:56,704 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-24 11:06:56,768 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 06:18:01,747 - siem.db_setup - INFO - Initializing database at: data/siem.db
+2025-08-25 06:18:01,954 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 06:18:01,973 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 06:18:06,700 - siem.db_setup - INFO - Initializing database at: D:\siem\data\siem.db
+2025-08-25 06:18:06,709 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 06:18:06,712 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 07:16:54,956 - siem.db_setup - INFO - Initializing database at: D:\siem\data\siem.db
+2025-08-25 07:16:55,151 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 07:16:55,154 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 08:25:03,300 - siem.db_setup - INFO - Initializing database at: data/siem.db
+2025-08-25 08:25:03,336 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 08:25:03,435 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 08:25:22,917 - siem.db_setup - INFO - Initializing database at: D:\siem\data\siem.db
+2025-08-25 08:25:22,921 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 08:25:22,927 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 08:45:02,163 - siem.db_setup - INFO - Initializing database at: data/siem.db
+2025-08-25 08:45:02,413 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 08:45:02,416 - siem.db_setup - INFO - Database setup completed successfully
+2025-08-25 08:45:43,165 - siem.db_setup - INFO - Initializing database at: data/siem.db
+2025-08-25 08:45:43,171 - siem.db_setup - INFO - Created database tables and indexes
+2025-08-25 08:45:43,173 - siem.db_setup - INFO - Database setup completed successfully

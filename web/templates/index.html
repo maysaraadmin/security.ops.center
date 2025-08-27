@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4><i class="bi bi-shield-lock me-2"></i>SIEM Dashboard</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>System Status</h5>
+                            <div class="d-flex align-items-center mb-3">
+                                <div id="status-indicator" class="status-indicator status-stopped me-2"></div>
+                                <span id="status-text" class="fw-bold">Stopped</span>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <button id="start-siem" class="btn btn-success me-2">
+                                    <i class="bi bi-play-fill"></i> Start SIEM
+                                </button>
+                                <button id="stop-siem" class="btn btn-danger" disabled>
+                                    <i class="bi bi-stop-fill"></i> Stop SIEM
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Quick Actions</h5>
+                            <div class="btn-group">
+                                <button class="btn btn-outline-primary">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
+                                <button class="btn btn-outline-secondary">
+                                    <i class="bi bi-gear"></i> Settings
+                                </button>
+                                <button class="btn btn-outline-info">
+                                    <i class="bi bi-question-circle"></i> Help
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-activity me-2"></i>Real-time Alerts
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="alerts-container" style="height: 300px; overflow-y: auto;">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            No alerts to display. The system will show security alerts here.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-speedometer2 me-2"></i>System Health
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>CPU Usage</span>
+                            <span id="cpu-usage">0%</span>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div id="cpu-bar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Memory Usage</span>
+                            <span id="memory-usage">0%</span>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div id="memory-bar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Disk Usage</span>
+                            <span id="disk-usage">0%</span>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div id="disk-bar" class="progress-bar bg-warning" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// System status management
+const statusIndicator = document.getElementById('status-indicator');
+const statusText = document.getElementById('status-text');
+const startBtn = document.getElementById('start-siem');
+const stopBtn = document.getElementById('stop-siem');
+
+// Update system status
+function updateStatus(status) {
+    const statusClass = `status-${status}`;
+    statusIndicator.className = `status-indicator ${statusClass} me-2`;
+    statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    
+    if (status === 'running') {
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+    } else {
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
+}
+
+// Event listeners
+startBtn.addEventListener('click', () => {
+    // In a real implementation, this would make an API call to start the SIEM
+    updateStatus('starting');
+    
+    // Simulate starting
+    setTimeout(() => {
+        updateStatus('running');
+    }, 1500);
+});
+
+stopBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to stop the SIEM system?')) {
+        updateStatus('stopping');
+        
+        // Simulate stopping
+        setTimeout(() => {
+            updateStatus('stopped');
+        }, 1000);
+    }
+});
+
+// Simulate system metrics
+function updateMetrics() {
+    // Random values for demo
+    const cpu = Math.min(100, Math.max(0, 30 + Math.random() * 40));
+    const memory = Math.min(100, Math.max(0, 20 + Math.random() * 50));
+    const disk = Math.min(100, Math.max(0, 10 + Math.random() * 30));
+    
+    // Update CPU
+    document.getElementById('cpu-usage').textContent = `${cpu.toFixed(1)}%`;
+    document.getElementById('cpu-bar').style.width = `${cpu}%`;
+    document.getElementById('cpu-bar').className = `progress-bar ${getBarClass(cpu)}`;
+    
+    // Update Memory
+    document.getElementById('memory-usage').textContent = `${memory.toFixed(1)}%`;
+    document.getElementById('memory-bar').style.width = `${memory}%`;
+    document.getElementById('memory-bar').className = `progress-bar ${getBarClass(memory)}`;
+    
+    // Update Disk
+    document.getElementById('disk-usage').textContent = `${disk.toFixed(1)}%`;
+    document.getElementById('disk-bar').style.width = `${disk}%`;
+    document.getElementById('disk-bar').className = `progress-bar ${getBarClass(disk)}`;
+}
+
+// Get appropriate color class based on value
+function getBarClass(value) {
+    if (value > 80) return 'bg-danger';
+    if (value > 60) return 'bg-warning';
+    if (value > 30) return 'bg-info';
+    return 'bg-success';
+}
+
+// Update metrics every 2 seconds
+setInterval(updateMetrics, 2000);
+updateMetrics(); // Initial update
+</script>
+{% endblock %}

@@ -1,0 +1,50 @@
+2025-08-25 11:50:43,978 - minimal_test - INFO - === Starting Minimal Test ===
+2025-08-25 11:50:43,981 - minimal_test - INFO - Starting minimal test...
+2025-08-25 11:50:43,982 - minimal_test - INFO - Attempting to import SIEM module...
+2025-08-25 11:50:44,244 - minimal_test - ERROR - Failed to import SIEM module: No module named 'src.edr.server'
+2025-08-25 11:50:44,264 - minimal_test - ERROR - Python path: ['D:\\security.operations.center', 'D:\\security.operations.center', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\DLLs', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32\\lib', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\Pythonwin', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages']
+2025-08-25 11:50:44,297 - minimal_test - ERROR - === Minimal Test FAILED ===
+2025-08-25 11:51:08,412 - minimal_test - INFO - === Starting Minimal Test ===
+2025-08-25 11:51:08,413 - minimal_test - INFO - Starting minimal test...
+2025-08-25 11:51:08,414 - minimal_test - INFO - Attempting to import SIEM module...
+2025-08-25 11:51:08,758 - minimal_test - ERROR - Failed to import SIEM module: No module named 'src.ndr.manager'
+2025-08-25 11:51:08,759 - minimal_test - ERROR - Python path: ['D:\\security.operations.center', 'D:\\security.operations.center', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\DLLs', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32\\lib', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\Pythonwin', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages']
+2025-08-25 11:51:08,763 - minimal_test - ERROR - === Minimal Test FAILED ===
+2025-08-25 11:51:57,695 - minimal_test - INFO - === Starting Minimal Test ===
+2025-08-25 11:51:57,696 - minimal_test - INFO - Starting minimal test...
+2025-08-25 11:51:57,697 - minimal_test - INFO - Attempting to import SIEM module...
+2025-08-25 11:51:58,069 - minimal_test - ERROR - Failed to import SIEM module: No module named 'src.fim.manager'
+2025-08-25 11:51:58,070 - minimal_test - ERROR - Python path: ['D:\\security.operations.center', 'D:\\security.operations.center', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\DLLs', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32\\lib', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\Pythonwin', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages']
+2025-08-25 11:51:58,075 - minimal_test - ERROR - === Minimal Test FAILED ===
+2025-08-25 11:52:55,836 - minimal_test - INFO - === Starting Minimal Test ===
+2025-08-25 11:52:55,837 - minimal_test - INFO - Starting minimal test...
+2025-08-25 11:52:55,839 - minimal_test - INFO - Attempting to import SIEM module...
+2025-08-25 11:52:56,506 - minimal_test - ERROR - Failed to import SIEM module: No module named 'src.nips.manager'
+2025-08-25 11:52:56,508 - minimal_test - ERROR - Python path: ['D:\\security.operations.center', 'D:\\security.operations.center', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\DLLs', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32\\lib', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\Pythonwin', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages']
+2025-08-25 11:52:56,555 - minimal_test - ERROR - === Minimal Test FAILED ===
+2025-08-25 11:53:39,115 - minimal_test - INFO - === Starting Minimal Test ===
+2025-08-25 11:53:39,116 - minimal_test - INFO - Starting minimal test...
+2025-08-25 11:53:39,117 - minimal_test - INFO - Attempting to import SIEM module...
+2025-08-25 11:53:41,049 - minimal_test - ERROR - Unexpected error: name 'threading' is not defined
+Traceback (most recent call last):
+  File "D:\security.operations.center\minimal_test.py", line 36, in test_minimal
+    from src.siem.core.siem import SIEM
+  File "D:\security.operations.center\src\siem\core\siem.py", line 27, in <module>
+    from src.siem.services.monitoring_service import create_monitoring_service
+  File "D:\security.operations.center\src\siem\services\monitoring_service.py", line 15, in <module>
+    from ..monitoring.metrics import metrics_collector, MetricsExporter, ConsoleExporter, PrometheusExporter, MetricsManager
+  File "D:\security.operations.center\src\siem\monitoring\__init__.py", line 9, in <module>
+    from .alerts import alert_manager, AlertRule, AlertSeverity, CommonAlertRules
+  File "D:\security.operations.center\src\siem\monitoring\alerts.py", line 348, in <module>
+    alert_manager = AlertManager()
+  File "D:\security.operations.center\src\siem\monitoring\alerts.py", line 171, in __init__
+    self._stop_event = threading.Event()
+                       ^^^^^^^^^
+NameError: name 'threading' is not defined. Did you forget to import 'threading'?
+2025-08-25 11:53:41,119 - minimal_test - ERROR - === Minimal Test FAILED ===
+2025-08-25 11:59:39,545 - minimal_test - INFO - === Starting Minimal Test ===
+2025-08-25 11:59:39,547 - minimal_test - INFO - Starting minimal test...
+2025-08-25 11:59:39,548 - minimal_test - INFO - Attempting to import SIEM module...
+2025-08-25 11:59:40,866 - minimal_test - ERROR - Failed to import SIEM module: No module named 'src.compliance'
+2025-08-25 11:59:40,868 - minimal_test - ERROR - Python path: ['D:\\security.operations.center', 'D:\\security.operations.center', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\DLLs', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\win32\\lib', 'C:\\Users\\T\\AppData\\Roaming\\Python\\Python313\\site-packages\\Pythonwin', 'C:\\Users\\T\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages']
+2025-08-25 11:59:40,875 - minimal_test - ERROR - === Minimal Test FAILED ===

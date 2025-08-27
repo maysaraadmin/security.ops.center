@@ -1,0 +1,116 @@
+# Historical Analysis Configuration
+
+# Storage settings
+storage:
+  # Base directory for storing historical data
+  data_dir: "data/historical"
+  
+  # Compression method (zstd, gzip, or none)
+  compression: "zstd"
+  
+  # Retention period in days
+  retention_days: 365
+  
+  # Batch size for writing to disk
+  batch_size: 1000
+
+# Historical Anomaly Detector settings
+anomaly_detection:
+  # Time window for short-term history (in hours)
+  window_hours: 24
+  
+  # Learning rate for updating baselines (0-1)
+  learning_rate: 0.1
+  
+  # Minimum samples required to establish a baseline
+  min_samples: 100
+  
+  # Anomaly score threshold (0-1)
+  anomaly_threshold: 0.9
+
+# Scheduled tasks
+scheduled_tasks:
+  # Run retention policy daily at 2 AM
+  retention_policy:
+    enabled: true
+    schedule: "0 2 * * *"  # cron format
+    
+  # Generate daily reports at 1 AM
+  daily_reports:
+    enabled: true
+    schedule: "0 1 * * *"
+    recipients: 
+      - "security-team@example.com"
+    
+  # Update baselines weekly on Sunday at 3 AM
+  update_baselines:
+    enabled: true
+    schedule: "0 3 * * 0"
+
+# Feature configuration
+features:
+  # Enable/disable specific features
+  enable_event_count_analysis: true
+  enable_data_volume_analysis: true
+  enable_response_time_analysis: true
+  enable_source_ip_analysis: true
+  enable_destination_port_analysis: true
+  
+  # Thresholds for anomaly detection
+  thresholds:
+    # Z-score threshold for statistical anomalies
+    z_score_threshold: 3.0
+    
+    # Minimum number of events required for analysis
+    min_events_for_analysis: 1000
+    
+    # Time windows for trend analysis (in days)
+    trend_analysis_windows: [1, 7, 30]
+
+# Integration settings
+integrations:
+  # SIEM integration
+  siem:
+    enabled: true
+    # Add SIEM-specific settings here
+    
+  # Alerting integration
+  alerting:
+    enabled: true
+    # Add alerting-specific settings here
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "logs/historical_analysis.log"
+  max_size_mb: 100
+  backup_count: 5
+
+# Performance settings
+performance:
+  # Maximum number of worker threads for parallel processing
+  max_workers: 4
+  
+  # Batch size for bulk operations
+  batch_size: 1000
+  
+  # Memory cache size (in MB)
+  cache_size_mb: 512
+
+# Advanced settings (use with caution)
+advanced:
+  # Enable experimental features
+  experimental_features: false
+  
+  # Enable debug mode (verbose logging)
+  debug: false
+  
+  # Custom feature weights for anomaly scoring
+  feature_weights:
+    event_count: 0.3
+    data_volume: 0.4
+    response_time: 0.2
+    source_ip_entropy: 0.1
+    
+  # Custom time windows for analysis (in minutes)
+  time_windows: [5, 15, 60, 1440]  # 5m, 15m, 1h, 1d

@@ -1,0 +1,8 @@
+2025-08-25 07:40:31,868 - siem.db_check - INFO - Checking database at: data/siem.db
+2025-08-25 07:40:32,084 - siem.db_check - INFO - Found tables: events, sqlite_sequence, alerts, users, settings
+2025-08-25 07:40:32,190 - siem.db_check - INFO - Table 'events' columns: id, timestamp, source, event_type, severity, description, raw_data, category, status, source_ip, destination_ip, user_agent, hostname, process_name, process_id, parent_process_id, command_line, file_path, file_hash, registry_key, registry_value, registry_data, created_at, updated_at
+2025-08-25 07:40:32,266 - siem.db_check - INFO - Table 'alerts' columns: id, event_id, title, description, status, severity, source, category, assigned_to, resolution, created_at, updated_at, resolved_at
+2025-08-25 07:40:32,372 - siem.db_check - INFO - Table 'users' columns: id, username, password_hash, full_name, email, role, is_active, last_login, created_at, updated_at
+2025-08-25 07:40:32,385 - siem.db_check - INFO - Table 'settings' columns: id, key, value, description, created_at, updated_at
+2025-08-25 07:40:32,391 - siem.db_check - INFO - Journal mode: wal
+2025-08-25 07:40:32,499 - siem.db_check - INFO - Database schema check completed successfully
