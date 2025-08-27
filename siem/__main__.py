@@ -1,11 +1,12 @@
 """
-Run the SIEM web interface.
-This script is a simple wrapper to ensure proper Python path handling.
+SIEM Command Line Interface
+This script provides a command-line interface for the SIEM system.
 """
 
 import os
 import sys
 import logging
+import argparse
 from pathlib import Path
 
 # Set up basic logging
@@ -14,7 +15,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('siem_web.log')
+        logging.FileHandler('siem_cli.log')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -23,68 +24,36 @@ logger = logging.getLogger(__name__)
 project_root = str(Path(__file__).parent.absolute())
 sys.path.insert(0, project_root)
 
-def load_config():
-    """Load SIEM configuration from file."""
-    import yaml
-    
-    # Possible config file locations
-    config_paths = [
-        os.path.join(os.path.dirname(__file__), 'config', 'siem_config.yaml'),
-        os.path.join(os.path.dirname(__file__), '..', 'config', 'siem_config.yaml'),
-        os.path.join(os.getcwd(), 'config', 'siem_config.yaml')
-    ]
-    
-    for config_path in config_paths:
-        try:
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    config = yaml.safe_load(f) or {}
-                logger.info(f"Successfully loaded configuration from {config_path}")
-                return config
-        except Exception as e:
-            logger.error(f"Error loading config from {config_path}: {e}")
-    
-    # If we get here, no config was loaded
-    logger.warning("No valid configuration file found, using default configuration")
-    return {
-        'siem': {
-            'host': '0.0.0.0',
-            'port': 5000,
-            'debug': True
-        },
-        'logging': {
-            'level': 'DEBUG',
-            'file': 'siem_web.log'
-        }
-    }
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='SIEM Command Line Interface')
+    parser.add_argument('--config', '-c', help='Path to configuration file')
+    parser.add_argument('--log-level', '-l', default='INFO',
+                      choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                      help='Set the logging level')
+    return parser.parse_args()
 
 def main():
-    # Set up environment variables first
-    os.environ['FLASK_APP'] = 'src.siem.web:create_app()'
-    os.environ['FLASK_ENV'] = 'development'
+    """Main entry point for the SIEM CLI."""
+    args = parse_arguments()
     
-    # Import create_app after setting up the path
-    from src.siem.web import create_app
+    # Set log level
+    logger.setLevel(args.log_level)
     
-    try:
-        # Load configuration
-        config = load_config()
-        
-        # Create and run the app with config
-        logger.info("Starting SIEM web interface...")
-        app = create_app(config=config)
-        
-        # Log available routes
-        logger.info("Available routes:")
-        for rule in app.url_map.iter_rules():
-            logger.info(f"  {rule.endpoint}: {rule.rule} ({', '.join(rule.methods)})")
-        
-        # Run the app
-        app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
-        
-    except Exception as e:
-        logger.error(f"Failed to start SIEM web interface: {e}", exc_info=True)
-        sys.exit(1)
+    logger.info("SIEM system started in CLI mode")
+    logger.info("Web GUI has been removed from this installation")
+    print("\nSIEM Command Line Interface")
+    print("---------------------------")
+    print("The web GUI has been removed from this installation.")
+    print("Please use the command line interface instead.\n")
+    
+    # Here you would add your CLI functionality
+    print("Available commands:")
+    print("  - analyze: Run security analysis")
+    print("  - monitor: Start monitoring")
+    print("  - report: Generate reports\n")
+    
+    return 0
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
