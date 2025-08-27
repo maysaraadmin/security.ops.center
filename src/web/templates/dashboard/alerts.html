@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts - EDR Security Center{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Security Alerts</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary">Export</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary">Filter</button>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">All Alerts</h5>
+                <div class="d-flex
+                <select class="form-select form-select-sm me-2" style="width: auto;">
+                    <option>All Severity</option>
+                    <option>Critical</option>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                    <option>Info</option>
+                </select>
+                <div class="input-group input-group-sm" style="width: 250px;">
+                    <input type="text" class="form-control" placeholder="Search alerts...">
+                    <button class="btn btn-outline-secondary" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="">
+                                    </div>
+                                </th>
+                                <th>Alert</th>
+                                <th>Severity</th>
+                                <th>Source</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for i in range(10) %}
+                            <tr class="{{ 'table-danger' if i < 2 else 'table-warning' if i < 5 else '' }}">
+                                <td>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="">
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="fw-bold">Suspicious Process Detected</div>
+                                    <div class="text-muted small">Process: powershell.exe -nop -w hidden -e ...</div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if i < 2 else 'warning' if i < 5 else 'info' }}">
+                                        {{ 'Critical' if i < 2 else 'High' if i < 5 else 'Medium' }}
+                                    </span>
+                                </td>
+                                <td>WS-{{ i+1 }}-EDR</td>
+                                <td>{{ i + 1 }} hour{{ 's' if i > 0 else '' }} ago</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if i % 2 == 0 else 'secondary' }}">
+                                        {{ 'New' if i % 2 == 0 else 'In Progress' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">View</button>
+                                    <button class="btn btn-sm btn-outline-secondary">Dismiss</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <div class="text-muted small">Showing 1 to 10 of 24 entries</div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1">Previous</a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">Next</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alert Details Modal -->
+<div class="modal fade" id="alertDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Alert Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Alert details will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary">Take Action</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Initialize tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Handle alert row click
+        document.querySelectorAll('table tbody tr').forEach(row => {
+            row.addEventListener('click', function(e) {
+                // Don't trigger if the click was on a button or checkbox
+                if (!e.target.matches('button, .form-check-input')) {
+                    const modal = new bootstrap.Modal(document.getElementById('alertDetailsModal'));
+                    // Here you would typically load the alert details via AJAX
+                    modal.show();
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

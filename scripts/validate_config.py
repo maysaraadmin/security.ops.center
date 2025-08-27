@@ -51,22 +51,50 @@ def check_web_config() -> Tuple[bool, List[str]]:
     try:
         with open('config/web_config.yaml', 'r') as f:
             config = yaml.safe_load(f)
-            
+        
+        errors = []
+        
         # Check required top-level sections
         required_sections = ['app', 'database', 'security', 'logging', 'web', 'edr']
-        missing_sections = [s for s in required_sections if s not in config]
-        if missing_sections:
-            return False, [f"Missing required config sections: {', '.join(missing_sections)}"]
+        for section in required_sections:
+            if section not in config:
+                errors.append(f"Missing required section: {section}")
+        
+        # Check app settings
+        if 'app' in config:
+            app_required = ['env', 'debug', 'secret_key', 'host', 'port']
+            for setting in app_required:
+                if setting not in config['app']:
+                    errors.append(f"Missing required app setting: {setting}")
             
-        # Check required app settings
-        required_app_settings = ['env', 'debug', 'secret_key', 'host', 'port']
-        missing_app_settings = [s for s in required_app_settings if s not in config['app']]
-        if missing_app_settings:
-            return False, [f"Missing required app settings: {', '.join(missing_app_settings)}"]
-            
+            # Validate debug mode in production
+            if config['app'].get('env') == 'production' and config['app'].get('debug') is True:
+                errors.append("Debug mode should be disabled in production")
+        
         # Check security settings
-        if not config['security'].get('jwt_secret_key') or config['security']['jwt_secret_key'] == 'your-jwt-secret-key':
-            return False, ["Please change the default JWT secret key in web_config.yaml"]
+        if 'security' in config:
+            security = config['security']
+            
+            # Check JWT secret key
+            jwt_key = security.get('jwt_secret_key', '')
+            if not jwt_key or 'your-jwt-secret' in jwt_key:
+                errors.append("Please set a secure JWT secret key in web_config.yaml")
+            
+            # Check password security
+            if security.get('password_salt_rounds', 0) < 10:
+                errors.append("Password salt rounds should be at least 10")
+                
+            if security.get('password_min_length', 0) < 8:
+                errors.append("Minimum password length should be at least 8 characters")
+        
+        # Check database settings
+        if 'database' in config:
+            db_uri = config['database'].get('uri', '')
+            if 'sqlite' in db_uri and 'memory' not in db_uri and not db_uri.startswith('sqlite:///'):
+                errors.append("SQLite database path should be absolute (start with 'sqlite:///')")
+        
+        if errors:
+            return False, errors
             
         return True, []
         

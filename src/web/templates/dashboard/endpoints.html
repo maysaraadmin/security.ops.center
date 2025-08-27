@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Endpoints - EDR Security Center{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Managed Endpoints</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary">Export</button>
+            <button type="button" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-plus-circle"></i> Add Endpoint
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">All Endpoints</h5>
+                <div class="input-group input-group-sm" style="width: 250px;">
+                    <input type="text" class="form-control" placeholder="Search endpoints...">
+                    <button class="btn btn-outline-secondary" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Hostname</th>
+                                <th>IP Address</th>
+                                <th>OS</th>
+                                <th>Status</th>
+                                <th>Last Seen</th>
+                                <th>Threats</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for i in range(5) %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="me-3">
+                                            <i class="bi bi-pc-display fs-4"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold">WS-{{ i+1 }}-EDR</div>
+                                            <div class="text-muted small">Windows 10 Pro</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>192.168.1.{{ 100 + i }}</td>
+                                <td>
+                                    <span class="badge bg-light text-dark">
+                                        <i class="bi bi-windows me-1"></i> Windows 10
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check-circle me-1"></i> Online
+                                    </span>
+                                </td>
+                                <td>Just now</td>
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if i < 2 else 'secondary' }}">
+                                        {{ '2' if i < 2 else '0' }} threat{{ 's' if i >= 2 else '' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" data-bs-toggle="tooltip" title="View Details">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button class="btn btn-outline-secondary" data-bs-toggle="tooltip" title="Run Scan">
+                                            <i class="bi bi-shield-check"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger" data-bs-toggle="tooltip" title="Isolate Endpoint">
+                                            <i class="bi bi-shield-lock"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            
+                            {% for i in range(2) %}
+                            <tr class="table-secondary">
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="me-3">
+                                            <i class="bi bi-pc-display fs-4"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold">WS-{{ i+6 }}-EDR</div>
+                                            <div class="text-muted small">Windows 10 Pro</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>192.168.1.{{ 105 + i }}</td>
+                                <td>
+                                    <span class="badge bg-light text-dark">
+                                        <i class="bi bi-windows me-1"></i> Windows 10
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-x-circle me-1"></i> Offline
+                                    </span>
+                                </td>
+                                <td>2 hours ago</td>
+                                <td><span class="badge bg-secondary">0</span></td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-secondary" disabled data-bs-toggle="tooltip" title="View Details">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <div class="text-muted small">Showing 1 to 7 of 7 endpoints</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Endpoint Details Modal -->
+<div class="modal fade" id="endpointDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Endpoint Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>System Information</h6>
+                        <dl class="row">
+                            <dt class="col-sm-4">Hostname</dt>
+                            <dd class="col-sm-8">WS-1-EDR</dd>
+                            
+                            <dt class="col-sm-4">OS</dt>
+                            <dd class="col-sm-8">Windows 10 Pro 21H2</dd>
+                            
+                            <dt class="col-sm-4">IP Address</dt>
+                            <dd class="col-sm-8">192.168.1.100</dd>
+                            
+                            <dt class="col-sm-4">MAC Address</dt>
+                            <dd class="col-sm-8">00:1A:2B:3C:4D:5E</dd>
+                            
+                            <dt class="col-sm-4">Last Seen</dt>
+                            <dd class="col-sm-8">Just now</dd>
+                        </dl>
+                        
+                        <h6 class="mt-4">Agent Information</h6>
+                        <dl class="row">
+                            <dt class="col-sm-4">Version</dt>
+                            <dd class="col-sm-8">1.2.3</dd>
+                            
+                            <dt class="col-sm-4">Status</dt>
+                            <dd class="col-sm-8"><span class="badge bg-success">Running</span></dd>
+                            
+                            <dt class="col-sm-4">Uptime</dt>
+                            <dd class="col-sm-8">2 days, 4 hours</dd>
+                            
+                            <dt class="col-sm-4">Last Scan</dt>
+                            <dd class="col-sm-8">1 hour ago</dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Threat Summary</h6>
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <canvas id="threatChart" height="200"></canvas>
+                            </div>
+                        </div>
+                        
+                        <h6>Recent Activity</h6>
+                        <div class="list-group list-group-flush small">
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-shield-check text-success me-2"></i>
+                                    Quick scan completed
+                                    <div class="text-muted">1 hour ago</div>
+                                </div>
+                                <span class="badge bg-success rounded-pill">Clean</span>
+                            </div>
+                            <div class="list-group-item">
+                                <i class="bi bi-shield-lock text-warning me-2"></i>
+                                Threat blocked: Trojan.Generic.1234
+                                <div class="text-muted">3 hours ago</div>
+                            </div>
+                            <div class="list-group-item">
+                                <i class="bi bi-arrow-repeat text-primary me-2"></i>
+                                System reboot detected
+                                <div class="text-muted">2 days ago</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary">Take Action</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Initialize tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        // Handle endpoint details click
+        document.querySelectorAll('.btn-outline-primary').forEach(btn => {
+            if (btn.querySelector('.bi-eye')) {
+                btn.addEventListener('click', function() {
+                    const modal = new bootstrap.Modal(document.getElementById('endpointDetailsModal'));
+                    // Here you would typically load the endpoint details via AJAX
+                    
+                    // Sample data for the threat chart
+                    const threatCtx = document.getElementById('threatChart').getContext('2d');
+                    new Chart(threatCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Critical', 'High', 'Medium', 'Low'],
+                            datasets: [{
+                                data: [2, 5, 3, 1],
+                                backgroundColor: [
+                                    '#dc3545',
+                                    '#fd7e14',
+                                    '#ffc107',
+                                    '#20c997'
+                                ]
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                }
+                            }
+                        }
+                    });
+                    
+                    modal.show();
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}

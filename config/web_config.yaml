@@ -17,13 +17,19 @@ database:
 security:
   password_hash_algorithm: sha256
   password_salt_rounds: 10
-  jwt_secret_key: your-jwt-secret-key  # Change this in production
+  jwt_secret_key: "edr-secure-key-$(date +%s)-$RANDOM"  # Generated at runtime
   jwt_access_token_expires: 3600  # 1 hour in seconds
   cors_allowed_origins:
     - "http://localhost:5000"
     - "http://127.0.0.1:5000"
   rate_limit: "1000 per day;100 per hour"
   session_lifetime: 7200  # 2 hours in seconds
+  password_min_length: 12
+  max_login_attempts: 5
+  lockout_time: 900  # 15 minutes in seconds
+  enable_csrf: true
+  enable_rate_limiting: true
+  enable_cors: true
 
 # Logging configuration
 logging:

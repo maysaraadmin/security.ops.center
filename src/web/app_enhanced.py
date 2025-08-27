@@ -18,32 +18,147 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 # Local imports
 from src.edr.agent.edr_agent import EDRAgent, EDREvent, EventSeverity
-from src.web.config import get_web_config
 
-# Initialize configuration
-config = get_web_config()
+# Initialize extensions
+login_manager = LoginManager()
+login_manager.login_view = 'auth.login'
+login_manager.login_message_category = 'info'
+login_manager.session_protection = 'strong'
+socketio = SocketIO()
+csrf = CSRFProtect()
 
-# Initialize Flask app
-app = Flask(__name__)
+# Global EDR agent instance
+edr_agent = None
 
-# Configure Flask app from our config
-app_config = config.to_dict()
-app.secret_key = app_config['app']['secret_key']
-app.config.update({
-    'DEBUG': app_config['app']['debug'],
-    'SECRET_KEY': app_config['app']['secret_key'],
-    'SESSION_COOKIE_SECURE': app_config['app']['env'] == 'production',
-    'SESSION_COOKIE_HTTPONLY': True,
-    'SESSION_COOKIE_SAMESITE': 'Lax',
-    'PERMANENT_SESSION_LIFETIME': timedelta(
-        seconds=app_config['security'].get('session_lifetime', 7200)  # Default 2 hours
-    ),
-    'MAX_CONTENT_LENGTH': app_config['web'].get('max_upload_size', 16 * 1024 * 1024),  # 16MB
-    'UPLOAD_FOLDER': app_config['web'].get('upload_dir', 'uploads'),
-    'SQLALCHEMY_DATABASE_URI': app_config['database']['uri'],
-    'SQLALCHEMY_TRACK_MODIFICATIONS': False,
-    'LOGIN_DISABLED': False,  # Can be overridden in config
-})
+# Import the User model after extensions to avoid circular imports
+from .models.user import User
+
+@login_manager.user_loader
+def load_user(user_id):
+    """Load user by ID for Flask-Login."""
+    return User.get(user_id)
+
+def create_app(config_override=None):
+    """Application factory function to create and configure the Flask app."""
+    # Initialize Flask app
+    app = Flask(__name__)
+    
+    # Load default config
+    from src.web.config import get_web_config
+    config = get_web_config()
+    
+    # Apply config overrides if provided
+    if config_override:
+        config.update(config_override)
+    
+    # Configure Flask app from our config
+    app_config = config.to_dict() if hasattr(config, 'to_dict') else config
+    app.secret_key = app_config.get('SECRET_KEY', 'dev-secret-key')
+    app.config.update({
+        'DEBUG': app_config.get('DEBUG', False),
+        'TESTING': app_config.get('TESTING', False),
+        'SECRET_KEY': app_config.get('SECRET_KEY', 'dev-secret-key'),
+        'SESSION_COOKIE_SECURE': app_config.get('SESSION_COOKIE_SECURE', False),
+        'SESSION_COOKIE_HTTPONLY': True,
+        'SESSION_COOKIE_SAMESITE': 'Lax',
+        'PERMANENT_SESSION_LIFETIME': timedelta(
+            seconds=app_config.get('PERMANENT_SESSION_LIFETIME', 7200)  # Default 2 hours
+        ),
+        'WTF_CSRF_ENABLED': app_config.get('WTF_CSRF_ENABLED', True),
+        'MAX_CONTENT_LENGTH': app_config.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024),  # 16MB
+        'UPLOAD_FOLDER': app_config.get('UPLOAD_FOLDER', 'uploads'),
+        'SQLALCHEMY_DATABASE_URI': app_config.get('SQLALCHEMY_DATABASE_URI', 'sqlite:///:memory:'),
+        'SQLALCHEMY_TRACK_MODIFICATIONS': False,
+    })
+    
+    # Initialize extensions
+    login_manager.init_app(app)
+    csrf.init_app(app)
+    socketio.init_app(app, cors_allowed_origins="*")
+    
+    # Initialize EDR agent if not in testing mode or explicitly enabled
+    global edr_agent
+    if not app.config.get('TESTING') or app.config.get('ENABLE_EDR_IN_TEST', False):
+        edr_config = app_config.get('EDR', {})
+        edr_agent = EDRAgent(edr_config)
+        
+        # Register callbacks
+        @edr_agent.callbacks('event_received')
+        def on_event_received(event):
+            socketio.emit('event_update', event.to_dict())
+        
+        @edr_agent.callbacks('metrics_updated')
+        def on_metrics_updated(metrics):
+            socketio.emit('metrics_update', metrics)
+        
+        # Start the agent
+        if not edr_agent.running:
+            edr_agent.start()
+    
+    # Register blueprints and routes
+    register_blueprints(app)
+    
+    # Register error handlers
+    register_error_handlers(app)
+    
+    return app
+
+def register_blueprints(app):
+    """Register Flask blueprints."""
+    # Import blueprints here to avoid circular imports
+    from . import auth, dashboard, api
+    
+    # Register blueprints
+    app.register_blueprint(auth.bp)
+    app.register_blueprint(dashboard.bp)
+    app.register_blueprint(api.bp, url_prefix='/api')
+
+def register_error_handlers(app):
+    """Register error handlers."""
+    @app.errorhandler(400)
+    def bad_request_error(error):
+        return jsonify({
+            'success': False,
+            'error': 'Bad Request',
+            'message': str(error)
+        }), 400
+
+    @app.errorhandler(401)
+    def unauthorized_error(error):
+        return jsonify({
+            'success': False,
+            'error': 'Unauthorized',
+            'message': 'Authentication is required to access this resource.'
+        }), 401
+
+    @app.errorhandler(403)
+    def forbidden_error(error):
+        return jsonify({
+            'success': False,
+            'error': 'Forbidden',
+            'message': 'You do not have permission to access this resource.'
+        }), 403
+
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return jsonify({
+            'success': False,
+            'error': 'Not Found',
+            'message': 'The requested resource was not found.'
+        }), 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        return jsonify({
+            'success': False,
+            'error': 'Internal Server Error',
+            'message': 'An unexpected error occurred.'
+        }), 500
+
+# Create app instance if run directly
+if __name__ == '__main__':
+    app = create_app()
+    socketio.run(app, debug=app.config['DEBUG'], host=app.config.get('HOST', '0.0.0.0'), port=app.config.get('PORT', 5000))
 
 # EDR Configuration
 EDR_CONFIG = {

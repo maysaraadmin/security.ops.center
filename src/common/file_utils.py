@@ -1,4 +1,4 @@
-""
+"""
 File system utilities with proper path handling.
 """
 import os
