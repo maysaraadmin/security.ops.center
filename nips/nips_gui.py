@@ -841,19 +841,6 @@ class NIPSGUI:
         self.monitoring = False
         self.root.destroy()
 
-def main():
-    """Main entry point for the NIPS GUI application."""
-    root = tk.Tk()
-    app = NIPSGUI(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()
-        """
-        
-        messagebox.showinfo("Alert Details", details.strip())
-    
     def block_source_ip(self):
         """Block the source IP of the selected alert."""
         selected = self.alert_tree.selection()
