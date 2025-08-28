@@ -37,6 +37,24 @@ class SysmonCollector:
     def _initialize_handles(self) -> None:
         """Initialize event log handles for reading."""
         try:
+            # Check if the log exists and is accessible
+            try:
+                import win32evtlog
+                h = win32evtlog.OpenEventLog(self.server, self.log_name)
+                win32evtlog.CloseEventLog(h)
+            except Exception as e:
+                logger.error(f"Cannot access {self.log_name} log. Please ensure Sysmon is properly installed and running. Error: {str(e)}")
+                # Try to find available logs
+                try:
+                    logs = [log for log in win32evtlog.EvtChannelEnum() if 'sysmon' in log.lower()]
+                    if logs:
+                        logger.warning(f"Found these Sysmon-related logs: {', '.join(logs)}")
+                    else:
+                        logger.warning("No Sysmon logs found. Is Sysmon installed?")
+                except Exception as e:
+                    logger.error(f"Error enumerating event logs: {str(e)}")
+                raise
+                
             # Open the Sysmon event log
             self.handles['sysmon'] = OpenEventLog(self.server, self.log_name)
             logger.info(f"Successfully connected to {self.log_name} event log")
@@ -61,34 +79,62 @@ class SysmonCollector:
         """
         events = []
         try:
+            if 'sysmon' not in self.handles or not self.handles['sysmon']:
+                logger.error("No valid Sysmon event log handle found. Reinitializing...")
+                self._initialize_handles()
+                if 'sysmon' not in self.handles or not self.handles['sysmon']:
+                    logger.error("Failed to initialize Sysmon event log handle")
+                    return []
+            
             # Read events in chunks
             flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            max_attempts = 3
+            attempt = 0
             
-            while len(events) < limit:
-                events_batch = win32evtlog.ReadEventLog(
-                    self.handles['sysmon'],
-                    flags,
-                    0,
-                    50  # Read 50 events at a time
-                )
-                
-                if not events_batch:
-                    break
+            while len(events) < limit and attempt < max_attempts:
+                try:
+                    events_batch = win32evtlog.ReadEventLog(
+                        self.handles['sysmon'],
+                        flags,
+                        0,  # Read from the beginning
+                        50  # Read 50 events at a time
+                    )
                     
-                for event in events_batch:
-                    if len(events) >= limit:
+                    if not events_batch:
+                        logger.info("No more events in the log")
                         break
-                        
-                    event_data = self._parse_event(event)
-                    if event_data:
-                        events.append(event_data)
-                        
-                        # Update the last event time
-                        event_time = event_data.get('timestamp')
-                        if event_time:
-                            self.last_event_time['sysmon'] = event_time
-            
+                    
+                    logger.debug(f"Read {len(events_batch)} events in batch")
+                    
+                    for event in events_batch:
+                        if len(events) >= limit:
+                            break
+                            
+                        event_data = self._parse_event(event)
+                        if event_data:
+                            events.append(event_data)
+                            # Update the last event time
+                            event_time = event_data.get('timestamp')
+                            if event_time:
+                                self.last_event_time['sysmon'] = event_time
+                            
+                except Exception as e:
+                    logger.error(f"Error reading Sysmon events: {e}")
+                    # Try to reinitialize the handle on error
+                    attempt += 1
+                    if attempt < max_attempts:
+                        logger.info(f"Retrying... (attempt {attempt}/{max_attempts})")
+                        self._initialize_handles()
+                    continue
+                    
+                # If we got here, we had a successful read
+                attempt = 0
+                
             return events
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in get_events: {e}")
+            return []
             
         except Exception as e:
             logger.error(f"Error reading Sysmon events: {str(e)}")
@@ -279,14 +325,43 @@ def collect_sysmon_events() -> List[Dict[str, Any]]:
     Returns:
         List of collected events
     """
+    collector = None
     try:
+        logger.info("Initializing Sysmon collector...")
         collector = SysmonCollector()
+        
+        # Try to get events with a timeout
+        logger.info("Attempting to collect events...")
         events = collector.get_events(limit=100)
-        collector.close()
+        
+        if not events:
+            logger.warning("No events were returned by get_events()")
+            return []
+            
+        logger.info(f"Successfully collected {len(events)} events")
         return events
+        
     except Exception as e:
-        logger.error(f"Failed to collect Sysmon events: {str(e)}")
+        import traceback
+        error_msg = f"Failed to collect Sysmon events: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        
+        # Try to get more specific error information
+        try:
+            import win32api
+            error_code = win32api.GetLastError()
+            logger.error(f"Windows error code: {error_code}")
+        except Exception as win_err:
+            logger.error(f"Could not get Windows error code: {str(win_err)}")
+            
         return []
+        
+    finally:
+        if collector:
+            try:
+                collector.close()
+            except Exception as e:
+                logger.error(f"Error closing collector: {str(e)}")
 
 
 if __name__ == "__main__":

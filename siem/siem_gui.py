@@ -995,7 +995,7 @@ class SIEMGUI:
             # Copyright info
             copyright_label = ttk.Label(
                 about_window, 
-                text="© 2025 Security Ops Center. All rights reserved.",
+                text=" 2025 Security Ops Center. All rights reserved.",
                 font=('Arial', 8)
             )
             copyright_label.pack(pady=5)
@@ -1623,30 +1623,110 @@ class SIEMGUI:
             self.event_context_menu.post(event.x_root, event.y_root)
     
     def view_event_details(self):
-        """Display detailed information about the selected event."""
-        selected = self.events_table.selection()
-        if not selected:
+        """Display detailed information about the selected event in a new window."""
+        selected_item = self.events_table.selection()
+        if not selected_item:
             messagebox.showinfo("Info", "Please select an event to view details.")
             return
-            
-        item = selected[0]
-        values = self.events_table.item(item, 'values')
         
-        # Enable the text widget, insert the details, then disable it again
-        self.event_details.config(state='normal')
-        self.event_details.delete(1.0, tk.END)
+        item_id = selected_item[0]
+        event_data = self.event_data.get(item_id, {})
         
-        # Format and insert the event details
-        details_text = (
-            f"Timestamp: {values[0]}\n"
-            f"Source: {values[1]}\n"
-            f"Event Type: {values[2]}\n"
-            f"Severity: {values[3]}\n"
-            f"\nMessage:\n{values[4]}"
+        # Create a new window for the event details
+        details_window = tk.Toplevel(self.root)
+        details_window.title("Event Details")
+        details_window.geometry("900x700")
+        
+        # Create a notebook for different detail views
+        notebook = ttk.Notebook(details_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Summary tab
+        summary_frame = ttk.Frame(notebook)
+        notebook.add(summary_frame, text="Summary")
+        
+        # Create a text widget with scrollbar for summary
+        summary_text = scrolledtext.ScrolledText(
+            summary_frame,
+            wrap=tk.WORD,
+            width=100,
+            height=20,
+            font=('Consolas', 10)
         )
+        summary_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        self.event_details.insert(tk.END, details_text)
-        self.event_details.config(state='disabled')
+        # Format and display the event summary
+        summary = []
+        
+        # Basic event information
+        summary.append("=== EVENT SUMMARY ===\n")
+        summary.append(f"Timestamp:    {event_data.get('timestamp', 'N/A')}")
+        summary.append(f"Event ID:     {event_data.get('event_id', event_data.get('EventID', 'N/A'))}")
+        summary.append(f"Event Type:   {event_data.get('event_type', event_data.get('EventType', 'N/A'))}")
+        summary.append(f"Source:       {event_data.get('source', event_data.get('SourceName', 'N/A'))}")
+        summary.append(f"Level:        {event_data.get('level', 'INFO')}")
+        summary.append("\n=== EVENT DATA ===\n")
+        
+        # Add all event data in a formatted way
+        for key, value in event_data.items():
+            if key not in ['timestamp', 'event_id', 'EventID', 'event_type', 'EventType', 'source', 'SourceName', 'level']:
+                if isinstance(value, dict):
+                    summary.append(f"{key}:")
+                    for subkey, subvalue in value.items():
+                        summary.append(f"  {subkey}: {subvalue}")
+                else:
+                    summary.append(f"{key}: {value}")
+        
+        # Insert the formatted text
+        summary_text.insert(tk.END, '\n'.join(summary))
+        summary_text.config(state='disabled')
+        
+        # Raw Data tab
+        raw_frame = ttk.Frame(notebook)
+        notebook.add(raw_frame, text="Raw Data")
+        
+        # Create a text widget with scrollbar for raw data
+        raw_text = scrolledtext.ScrolledText(
+            raw_frame,
+            wrap=tk.WORD,
+            width=100,
+            height=20,
+            font=('Consolas', 10)
+        )
+        raw_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Display the raw event data
+        try:
+            import json
+            raw_text.insert(tk.END, json.dumps(event_data, indent=2, default=str))
+        except Exception as e:
+            raw_text.insert(tk.END, str(event_data))
+        raw_text.config(state='disabled')
+        
+        # Add action buttons
+        button_frame = ttk.Frame(details_window)
+        button_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Copy to clipboard button
+        ttk.Button(
+            button_frame,
+            text="Copy to Clipboard",
+            command=lambda: self.copy_to_clipboard(json.dumps(event_data, indent=2, default=str))
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Search online button (for event IDs)
+        ttk.Button(
+            button_frame,
+            text="Search Online",
+            command=lambda: self.search_event_online()
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Close button
+        ttk.Button(
+            button_frame,
+            text="Close",
+            command=details_window.destroy
+        ).pack(side=tk.RIGHT, padx=5)
     
     def add_to_watchlist(self):
         """Add the selected event's source to the watchlist."""
@@ -2386,54 +2466,259 @@ class SIEMGUI:
                 self.status_bar.config(text=f"Error filtering events: {str(e)[:100]}...")
                 self.root.after(5000, lambda: self.status_bar.config(text=""))
     
+    def refresh_events(self, event=None):
+        """Refresh the events display."""
+        self._add_real_events()
+    
+    def filter_events(self):
+        """Filter events based on current filter settings."""
+        search_term = self.search_var.get().lower()
+        level_filter = self.level_filter.get()
+        
+        for item in self.events_tree.get_children():
+            values = self.events_tree.item(item, 'values')
+            level = values[3] if len(values) > 3 else ''
+            
+            # Apply level filter
+            level_match = (level_filter == "All") or (level.upper() == level_filter.upper())
+            
+            # Apply search term
+            search_match = not search_term or any(search_term in str(val).lower() for val in values)
+            
+            self.events_tree.item(item, tags=('visible' if (level_match and search_match) else 'hidden'))
+        
+        # Hide/show rows based on tags
+        self.events_tree.tag_configure('visible', display='')
+        self.events_tree.tag_configure('hidden', display='none')
+    
+    def setup_context_menu(self):
+        """Set up the right-click context menu for events."""
+        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(label="View Details", command=self.view_event_details)
+        self.context_menu.add_command(label="Copy Event ID", command=self.copy_event_id)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Refresh", command=self.refresh_events)
+    
+    def show_event_context_menu(self, event):
+        """Show the context menu on right-click."""
+        item = self.events_tree.identify_row(event.y)
+        if item:
+            self.events_tree.selection_set(item)
+            self.context_menu.post(event.x_root, event.y_root)
+    
+    def copy_event_id(self):
+        """Copy the selected event ID to clipboard."""
+        selected = self.events_tree.selection()
+        if selected:
+            item = selected[0]
+            values = self.events_tree.item(item, 'values')
+            if values and len(values) > 2:  # Assuming Event ID is in the third column
+                self.root.clipboard_clear()
+                self.root.clipboard_append(values[2])
+    
+    def refresh_events(self, event=None):
+        """Refresh the events display."""
+        self._add_real_events()
+    
+    def filter_events(self, event=None):
+        """Filter events based on current filter settings."""
+        search_term = self.search_var.get().lower()
+        level_filter = self.level_filter.get()
+        source_filter = self.source_filter.get()
+        
+        for item in self.events_tree.get_children():
+            values = self.events_tree.item(item, 'values')
+            if not values:
+                continue
+                
+            level = values[3] if len(values) > 3 else ''
+            source = values[1] if len(values) > 1 else ''
+            
+            # Apply filters
+            level_match = (level_filter == "All") or (level.upper() == level_filter.upper())
+            source_match = (source_filter == "All") or (source == source_filter)
+            search_match = not search_term or any(search_term in str(val).lower() for val in values)
+            
+            if level_match and source_match and search_match:
+                self.events_tree.item(item, tags=('visible', level.upper()))
+            else:
+                self.events_tree.item(item, tags=('hidden', level.upper()))
+        
+        # Apply tag configurations
+        self.events_tree.tag_configure('visible', display='')
+        self.events_tree.tag_configure('hidden', display='none')
+    
+    def setup_context_menu(self):
+        """Set up the right-click context menu for events."""
+        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(label="View Details", command=self.view_event_details)
+        self.context_menu.add_command(label="Copy Event ID", command=self.copy_event_id)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Refresh", command=self.refresh_events)
+    
+    def show_event_context_menu(self, event):
+        """Show the context menu on right-click."""
+        item = self.events_tree.identify_row(event.y)
+        if item:
+            self.events_tree.selection_set(item)
+            self.context_menu.post(event.x_root, event.y_root)
+    
+    def copy_event_id(self):
+        """Copy the selected event ID to clipboard."""
+        selected = self.events_tree.selection()
+        if selected:
+            item = selected[0]
+            values = self.events_tree.item(item, 'values')
+            if values and len(values) > 2:  # Assuming Event ID is in the third column
+                self.root.clipboard_clear()
+                self.root.clipboard_append(values[2])
+    
     def _add_real_events(self):
-        """Fetch and display real Sysmon events."""
+        """Fetch and display real Sysmon events with enhanced UI feedback."""
         try:
+            # Clear existing items
+            for item in self.events_tree.get_children():
+                self.events_tree.delete(item)
+                
+            # Show loading state
+            if hasattr(self, 'status_bar'):
+                self.status_bar.config(text="Loading events...")
+                self.root.update_idletasks()
+            
             # Import the Sysmon collector
-            from siem.collectors.sysmon_collector import SysmonCollector
+            try:
+                from siem.collectors.sysmon_collector import SysmonCollector, collect_sysmon_events
+                logger.info("Successfully imported Sysmon collector")
+            except ImportError as ie:
+                error_msg = f"Failed to import Sysmon collector: {str(ie)}"
+                logger.error(error_msg)
+                messagebox.showerror("Error", 
+                    f"Failed to load Sysmon collector.\n\n"
+                    f"Please ensure all dependencies are installed.\n\n"
+                    f"Error: {error_msg}")
+                self._add_fallback_sample_events()
+                return
             
-            # Initialize the collector
-            collector = SysmonCollector()
-            
-            # Get the latest events
-            events = collector.get_events(limit=100)
-            
-            # Add each event to the tree
-            for event in events:
-                event_type = event.get('type', 'Unknown Event')
-                event_tag = 'sysmon'
+            # Get recent events
+            try:
+                logger.info("Attempting to collect Sysmon events...")
                 
-                # Determine level and color
-                level = event.get('level', 'INFO').upper()
-                if level in ['ERROR', 'CRITICAL']:
-                    color = "#f2dede"  # Light red
-                elif level == 'WARNING':
-                    color = "#fcf8e3"  # Light yellow
-                else:
-                    color = "#d9edf7"  # Light blue
+                # Try to collect events directly as a test
+                try:
+                    import win32evtlog
+                    import win32con
+                    
+                    # Try to open the Sysmon log directly
+                    h = win32evtlog.OpenEventLog(None, "Microsoft-Windows-Sysmon/Operational")
+                    num_records = win32evtlog.GetNumberOfEventLogRecords(h)
+                    logger.info(f"Found {num_records} records in Sysmon log")
+                    win32evtlog.CloseEventLog(h)
+                    
+                    # Now try to collect events
+                    events = collect_sysmon_events()
+                    
+                    if not events:
+                        logger.warning("No Sysmon events were returned, but log exists")
+                        self.status_bar.config(text="No events found in Sysmon log")
+                        self._add_fallback_sample_events()
+                        return
+                        
+                except Exception as e:
+                    logger.error(f"Error accessing Sysmon log: {str(e)}")
+                    messagebox.showerror("Error", 
+                        f"Failed to access Sysmon event log. Please ensure:\n\n"
+                        "1. You are running as Administrator\n"
+                        "2. Sysmon is properly installed\n"
+                        f"\nError: {str(e)}")
+                    self._add_fallback_sample_events()
+                    return
                 
-                # Add the event to the tree
-                item_id = self.events_tree.insert(
-                    "", "end",
-                    values=(
-                        event.get('timestamp', ''),  # Time
-                        event.get('source', 'Unknown'),  # Source
-                        event.get('event_id', ''),  # Event ID
-                        level,  # Level
-                        event.get('details', 'No details available')  # Message
-                    ),
-                    tags=(event_tag,)
-                )
+                # Add events to the tree with better formatting
+                sources = set()
                 
-                # Store the raw data for context menu
-                self.event_data[item_id] = event.get('raw_data', {})
+                for event in events:
+                    try:
+                        # Format the timestamp
+                        timestamp = event.get('timestamp', datetime.utcnow().isoformat())
+                        if isinstance(timestamp, str):
+                            try:
+                                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                timestamp = dt.strftime('%Y-%m-%d %H:%M:%S')
+                            except (ValueError, AttributeError):
+                                timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Get event details
+                        event_id = str(event.get('event_id', event.get('EventID', 'N/A')))
+                        event_type = event.get('event_type', event.get('EventType', 'Unknown'))
+                        source = event.get('source', event.get('SourceName', 'Unknown'))
+                        level = event.get('level', 'INFO').upper()
+                        
+                        # Add source to filter options
+                        sources.add(source)
+                        
+                        # Format the message based on event type
+                        if event_type == 'Process Create':
+                            process_name = os.path.basename(event.get('Image', ''))
+                            message = f"{process_name}: {event.get('CommandLine', 'N/A')}"
+                        elif event_type == 'Network Connection':
+                            src_ip = event.get('SourceIp', 'N/A')
+                            src_port = event.get('SourcePort', 'N/A')
+                            dst_ip = event.get('DestinationIp', 'N/A')
+                            dst_port = event.get('DestinationPort', 'N/A')
+                            message = f"{src_ip}:{src_port} → {dst_ip}:{dst_port} ({event.get('Protocol', '')})"
+                        else:
+                            message = str(event.get('message', 'No details available'))
+                        
+                        # Truncate long messages
+                        if len(message) > 200:
+                            message = message[:197] + '...'
+                        
+                        # Add to tree with appropriate tags
+                        item_id = self.events_tree.insert(
+                            "", "end",
+                            values=(
+                                timestamp,
+                                source,
+                                f"{event_type} (ID: {event_id})",
+                                level,
+                                message
+                            ),
+                            tags=('visible', level)
+                        )
+                        
+                        # Store full event data for details view
+                        self.event_data[item_id] = event
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing event: {str(e)}")
+                        continue
                 
-                # Apply color based on level
-                self.events_tree.tag_configure(event_tag, background=color)
+                # Update source filter dropdown
+                if hasattr(self, 'source_filter'):
+                    current = self.source_filter.get()
+                    self.source_filter['values'] = ['All'] + sorted(sources)
+                    if current in sources:
+                        self.source_filter.set(current)
+                    else:
+                        self.source_filter.set('All')
+                
+                # Apply any active filters
+                self.filter_events()
+                
+                # Update status bar
+                if hasattr(self, 'status_bar'):
+                    self.status_bar.config(text=f"Loaded {len(events)} events")
+                    self.root.after(3000, lambda: self.status_bar.config(text="") if hasattr(self, 'status_bar') else None)
+                
+            except Exception as e:
+                logger.error(f"Error fetching Sysmon events: {str(e)}", exc_info=True)
+                self._add_fallback_sample_events()
                 
         except Exception as e:
-            logger.error(f"Error fetching Sysmon events: {str(e)}")
-            # Fall back to sample data if there's an error
+            logger.error(f"Unexpected error in _add_real_events: {str(e)}", exc_info=True)
+            if hasattr(self, 'status_bar'):
+                self.status_bar.config(text=f"Error: {str(e)[:100]}...")
+                self.root.after(5000, lambda: self.status_bar.config(text="") if hasattr(self, 'status_bar') else None)
             self._add_fallback_sample_events()
     
     def _add_fallback_sample_events(self):
