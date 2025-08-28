@@ -1,0 +1,99 @@
+[
+  {
+    "id": "brute_force_detection",
+    "name": "Multiple Failed Login Attempts",
+    "description": "Detects multiple failed login attempts from the same source IP",
+    "priority": 8,
+    "enabled": true,
+    "condition": {
+      "and": [
+        {
+          "event.category": "authentication",
+          "event.outcome": "failure"
+        },
+        {
+          "source.ip_exists": true
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "alert",
+        "severity": "high",
+        "message": "Multiple failed login attempts detected from {{source.ip}}",
+        "tags": ["brute_force", "authentication_failure"]
+      },
+      {
+        "type": "throttle",
+        "source_ip": "{{source.ip}}",
+        "reason": "Too many failed login attempts",
+        "rate_limit": "5/60s",
+        "duration": 3600
+      }
+    ]
+  },
+  {
+    "id": "port_scan_detection",
+    "name": "Port Scan Detection",
+    "description": "Detects potential port scanning activity",
+    "priority": 7,
+    "enabled": true,
+    "condition": {
+      "and": [
+        {
+          "event.category": "network",
+          "event.type": "connection_attempt"
+        },
+        {
+          "source.ip_exists": true
+        },
+        {
+          "destination.port_gt": 0
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "alert",
+        "severity": "medium",
+        "message": "Potential port scan detected from {{source.ip}}",
+        "tags": ["port_scan", "reconnaissance"]
+      }
+    ]
+  },
+  {
+    "id": "suspicious_file_access",
+    "name": "Suspicious File Access",
+    "description": "Detects access to sensitive system files",
+    "priority": 9,
+    "enabled": true,
+    "condition": {
+      "and": [
+        {
+          "event.category": "file",
+          "event.action": "read"
+        },
+        {
+          "or": [
+            {"file.path_regex": "(?:/etc/shadow|/etc/passwd|/etc/sudoers)"},
+            {"file.path_regex": "(?:C:\\\\(?:Windows|winnt)\\(?:system32|syswow64)\\.*\\(?:cmd\.exe|powershell\.exe|wscript\.exe|cscript\.exe)$"}
+          ]
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "alert",
+        "severity": "critical",
+        "message": "Suspicious file access detected: {{file.path}} by {{user.name}}",
+        "tags": ["suspicious_activity", "privilege_escalation"]
+      },
+      {
+        "type": "block",
+        "source_ip": "{{source.ip}}",
+        "reason": "Suspicious file access detected",
+        "duration": 86400
+      }
+    ]
+  }
+]

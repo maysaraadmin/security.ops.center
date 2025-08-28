@@ -105,6 +105,7 @@ class SysmonCollector:
         """
         try:
             event_id = event.EventID
+            self.last_event_id = event_id  # Store for field mapping
             event_time = event.TimeGenerated.Format()
             
             # Basic event structure
@@ -122,8 +123,9 @@ class SysmonCollector:
             # Parse event data
             if hasattr(event, 'StringInserts'):
                 event_data['event_data'] = self._parse_event_data(event.StringInserts)
-                
-            return event_data
+            
+            # Format for GUI display
+            return self._format_for_gui(event_data)
             
         except Exception as e:
             logger.error(f"Error parsing Sysmon event: {str(e)}")
@@ -141,13 +143,43 @@ class SysmonCollector:
         if not string_inserts:
             return {}
             
-        # The structure depends on the event ID
-        # This is a simplified version - you may need to customize based on your needs
-        event_data = {}
+        # Map of event IDs to their field names
+        event_field_maps = {
+            1: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "FileVersion", "Description", "Product", "Company", "OriginalFileName", "CommandLine", "CurrentDirectory", "User", "LogonGuid", "LogonId", "TerminalSessionId", "IntegrityLevel", "Hashes", "ParentProcessGuid", "ParentProcessId", "ParentImage", "ParentCommandLine"],
+            2: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "FileVersion", "Description", "Product", "Company", "OriginalFileName", "Hashes", "Signed", "Signature", "SignatureStatus"],
+            3: ["RuleName", "UtcTime", "SourceProcessGUID", "SourceProcessId", "SourceImage", "DestinationIp", "DestinationHostname", "DestinationPort", "DestinationPortName"],
+            5: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "TerminalSessionId", "IntegrityLevel", "Hashes", "ParentProcessGuid", "ParentProcessId", "ParentImage", "ParentCommandLine"],
+            7: ["RuleName", "UtcTime", "ImageLoaded", "Hashes", "Signed", "Signature", "SignatureStatus"],
+            8: ["RuleName", "UtcTime", "SourceProcessGUID", "SourceProcessId", "SourceThreadId", "SourceImage", "TargetProcessGUID", "TargetProcessId", "TargetImage", "NewThreadId", "StartAddress", "StartModule", "StartFunction"],
+            9: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "ImageLoaded", "FileVersion", "Description", "Product", "Company", "OriginalFileName", "Hashes", "Signed", "Signature", "SignatureStatus"],
+            10: ["RuleName", "UtcTime", "SourceProcessGUID", "SourceProcessId", "SourceThreadId", "SourceImage", "TargetProcessGUID", "TargetProcessId", "TargetImage", "GrantedAccess", "CallTrace"],
+            11: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "TargetFilename", "CreationUtcTime", "Hashes", "User"],
+            12: ["RuleName", "EventType", "UtcTime", "ProcessGuid", "ProcessId", "Image", "TargetObject", "Details", "User"],
+            13: ["RuleName", "EventType", "UtcTime", "ProcessGuid", "ProcessId", "Image", "TargetObject", "Details", "User"],
+            14: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "TargetObject", "EventType", "Details"],
+            15: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "UtcTime", "Destination"],
+            16: ["RuleName", "UtcTime", "Config", "ConfigFile"],
+            17: ["RuleName", "UtcTime", "PipeName", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "Source"],
+            18: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "Source"],
+            19: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "Source"],
+            20: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "Source"],
+            21: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "Source"],
+            22: ["RuleName", "UtcTime", "ProcessGuid", "ProcessId", "Image", "User", "LogonGuid", "LogonId", "SourceModuleGUID", "SourceModuleName", "SourceModuleType", "EventType", "Source"]
+        }
         
-        for i, value in enumerate(string_inserts, 1):
-            event_data[f'data_{i}'] = value
-            
+        # Get the field map for this event ID
+        event_id = int(self.last_event_id) if hasattr(self, 'last_event_id') else 0
+        field_map = event_field_maps.get(event_id, [])
+        
+        # Create a dictionary with the field names as keys
+        event_data = {}
+        for i, value in enumerate(string_inserts):
+            if i < len(field_map):
+                field_name = field_map[i]
+                event_data[field_name] = value
+            else:
+                event_data[f'extra_field_{i}'] = value
+                
         return event_data
     
     @staticmethod
@@ -171,6 +203,61 @@ class SysmonCollector:
         elif event_type == win32con.EVENTLOG_AUDIT_FAILURE:
             return 'audit_failure'
         return 'unknown'
+    
+    def _format_for_gui(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Format event data for display in the GUI.
+        
+        Args:
+            event_data: The parsed event data
+            
+        Returns:
+            Formatted event data for the GUI
+        """
+        event_id = event_data.get('event_id', 0)
+        event_time = event_data.get('timestamp', '')
+        event_data = event_data.get('event_data', {})
+        
+        # Default values
+        event_type = f"Sysmon Event {event_id}"
+        details = ""
+        
+        # Format based on event type
+        if event_id == 1:  # Process creation
+            event_type = "Process Create"
+            details = f"Image: {event_data.get('Image', 'N/A')} | " \
+                     f"CommandLine: {event_data.get('CommandLine', 'N/A')} | " \
+                     f"User: {event_data.get('User', 'N/A')}"
+        elif event_id == 3:  # Network connection
+            event_type = "Network Connection"
+            details = f"Source: {event_data.get('SourceImage', 'N/A')} | " \
+                     f"Destination: {event_data.get('DestinationIp', 'N/A')}:{event_data.get('DestinationPort', 'N/A')} | " \
+                     f"Process: {event_data.get('SourceImage', 'N/A')}"
+        elif event_id == 7:  # Image loaded
+            event_type = "Image Loaded"
+            details = f"Image: {event_data.get('ImageLoaded', 'N/A')} | " \
+                     f"Process: {event_data.get('SourceImage', 'N/A')}"
+        elif event_id == 8:  # CreateRemoteThread
+            event_type = "Remote Thread Created"
+            details = f"Source: {event_data.get('SourceImage', 'N/A')} | " \
+                     f"Target: {event_data.get('TargetImage', 'N/A')} | " \
+                     f"StartModule: {event_data.get('StartModule', 'N/A')}"
+        elif event_id == 10:  # ProcessAccess
+            event_type = "Process Access"
+            details = f"Source: {event_data.get('SourceImage', 'N/A')} | " \
+                     f"Target: {event_data.get('TargetImage', 'N/A')} | " \
+                     f"Access: {event_data.get('GrantedAccess', 'N/A')}"
+        else:
+            # Generic format for other event types
+            details = " | ".join(f"{k}: {v}" for k, v in event_data.items() if v and len(str(v)) < 100)
+        
+        return {
+            'timestamp': event_time,
+            'source': event_data.get('Computer', 'Unknown'),
+            'event_id': str(event_id),
+            'type': event_type,
+            'details': details,
+            'raw_data': event_data
+        }
     
     def close(self) -> None:
         """Close all open event log handles."""

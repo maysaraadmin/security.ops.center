@@ -1,0 +1,60 @@
+# SIEM GUI Configuration
+
+# UI Settings
+ui:
+  theme: "dark"  # or "light"
+  font_family: "Segoe UI"
+  font_size: 10
+  window_width: 1400
+  window_height: 900
+  min_width: 1200
+  min_height: 700
+  refresh_interval: 5000  # ms
+
+# Logging Settings
+logging:
+  level: "INFO"
+  file: "logs/siem_gui.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+# Dashboard Settings
+dashboard:
+  show_recent_alerts: true
+  max_recent_alerts: 50
+  show_metrics: true
+  metrics_refresh_interval: 10000  # ms
+
+# Alerts Settings
+alerts:
+  default_severity: "medium"
+  auto_refresh: true
+  refresh_interval: 30000  # ms
+  max_display: 1000
+  export_formats: ["json", "csv", "xlsx"]
+
+# Events Settings
+events:
+  page_size: 100
+  max_display: 10000
+  auto_refresh: false
+  refresh_interval: 60000  # ms
+
+# Detection Rules
+detection:
+  auto_refresh: true
+  refresh_interval: 30000  # ms
+  default_rule_priority: "medium"
+
+# Network Settings
+network:
+  timeout: 10  # seconds
+  retry_attempts: 3
+  retry_delay: 1  # second
+
+# Paths
+paths:
+  exports: "exports"
+  configs: "config"
+  rules: "rules"
+  logs: "logs"

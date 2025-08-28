@@ -568,16 +568,30 @@ class SysmonService:
         try:
             # This is a simplified implementation
             # In a real implementation, you might want to get the primary IP
-            return psutil.net_if_addrs()['Ethernet'][1].address
-        except:
+            if not hasattr(psutil, 'net_if_addrs'):
+                raise ImportError("psutil.net_if_addrs not available")
+                
+            interfaces = psutil.net_if_addrs()
+            if 'Ethernet' not in interfaces or len(interfaces['Ethernet']) < 2:
+                raise ValueError("Ethernet interface not found or has no IP address")
+                
+            return interfaces['Ethernet'][1].address
+            
+        except (ImportError, ValueError, IndexError, KeyError) as e:
+            logger.warning(f"Could not get primary IP: {e}, using localhost")
             return '127.0.0.1'
     
     @staticmethod
     def _is_admin() -> bool:
         """Check if the current user has admin privileges."""
         try:
-            return os.getuid() == 0 or ctypes.windll.shell32.IsUserAnAdmin() != 0
-        except:
+            if os.name == 'posix':
+                return os.getuid() == 0
+            elif os.name == 'nt':
+                return ctypes.windll.shell32.IsUserAnAdmin() != 0
+            return False
+        except (AttributeError, OSError) as e:
+            logger.warning(f"Error checking admin status: {e}")
             return False
     
     @staticmethod
