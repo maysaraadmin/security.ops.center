@@ -119,7 +119,17 @@ class NIPSGUI:
         self.notebook = ttk.Notebook(self.main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Create tabs
+        # Data storage
+        self.events = []
+        self.alerts = []
+        self.metrics = {}
+        self.running = False
+        self.monitoring = False
+        
+        # Setup logging
+        self.setup_logging()
+        
+        # Setup UI tabs
         self.setup_dashboard_tab()
         self.setup_monitoring_tab()
         self.setup_rules_tab()

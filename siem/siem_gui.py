@@ -1,21 +1,29 @@
 """
-SIEM GUI Module
+SIEM GUI - Security Information and Event Management
 
-A self-contained graphical interface for the Security Information and Event Management system.
+A modern, modular GUI for the SIEM system using components from the siem package.
 """
-from siem.analytics.historical_analyzer import HistoricalAnalyzer
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, scrolledtext, filedialog
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
 import json
 import os
-import sys
-from typing import Dict, Any, List, Optional
 import threading
 import queue
+import sys
+from pathlib import Path
 
-# Set up basic logging
+# Import SIEM modules
+from siem.detection.engine import DetectionEngine
+from siem.response.engine import ResponseEngine
+from siem.analytics.historical_analyzer import HistoricalAnalyzer
+from siem.monitoring import MonitoringService
+from siem.collectors.manager import CollectorManager
+from siem.compliance.manager import ComplianceManager
+
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -26,64 +34,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('siem.gui')
 
-# Simple SIEM core implementation
-class SIEMCore:
-    """Simplified SIEM core for the GUI."""
-    
-    def __init__(self, config: Dict[str, Any] = None):
-        """Initialize the SIEM core with optional configuration."""
-        self.config = config or {}
-        self.running = False
-        self.events = []
-        self.alerts = []
-        
-    def get_next_event(self) -> Optional[Dict[str, Any]]:
-        """Get the next event (simulated for demo)."""
-        if not self.running:
-            return None
-            
-        # Simulate receiving an event
-        event = {
-            'timestamp': datetime.now().isoformat(),
-            'source': 'simulator',
-            'type': 'network',
-            'details': 'Sample network event',
-            'severity': 'info'
-        }
-        self.events.append(event)
-        return event
-        
-    def start(self):
-        """Start the SIEM core."""
-        self.running = True
-        logger.info("SIEM core started")
-        
-    def stop(self):
-        """Stop the SIEM core."""
-        self.running = False
-        logger.info("SIEM core stopped")
-
-# Simple Detection Engine
-class DetectionEngine:
-    """Simplified detection engine for the GUI."""
-    
-    def analyze(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Analyze an event and return any generated alerts."""
-        alerts = []
-        
-        # Simple detection logic (example)
-        if 'error' in str(event.get('details', '')).lower():
-            alert = {
-                'timestamp': datetime.now().isoformat(),
-                'source': 'detection_engine',
-                'severity': 'high',
-                'message': f'Error detected: {event.get("details", "")}'
-            }
-            alerts.append(alert)
-            
-        return alerts
-
-class SIEMApp:
+class SIEMGUI:
     """Main SIEM GUI application."""
     
     def __init__(self, root):
@@ -94,9 +45,21 @@ class SIEMApp:
         self.root.minsize(1200, 700)
         
         # Initialize SIEM components
-        self.siem_core = SIEMCore()
         self.detection_engine = DetectionEngine()
+        self.response_engine = ResponseEngine()
         self.historical_analyzer = HistoricalAnalyzer()
+        self.monitoring = MonitoringService({
+            'interval': 60,  # seconds
+            'metrics': ['cpu', 'memory', 'disk', 'network']
+        })
+        self.collector_manager = CollectorManager()
+        self.compliance_manager = ComplianceManager()
+        
+        # Data storage
+        self.events = []
+        self.alerts = []
+        self.metrics = {}
+        self.running = False
         
         # Data storage
         self.alerts = []
