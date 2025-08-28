@@ -1,283 +1,288 @@
 """
-Common response actions for SIEM incident response.
+Enhanced response actions for SIEM incident response.
 """
 import subprocess
 import logging
-from typing import Dict, Any, List, Optional, Set
-from datetime import datetime, timedelta
-import socket
 import platform
+import psutil
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
+import json
+import socket
 import os
 
 from .base import ResponseAction
 
-class BlockIPAction(ResponseAction):
-    """Blocks an IP address using the system firewall."""
+class TerminateProcessAction(ResponseAction):
+    """Terminates a potentially malicious process."""
     
     def _setup(self) -> None:
-        """Set up the IP blocking action."""
-        self.block_duration = timedelta(
-            minutes=self.config.get('block_duration_minutes', 60)
-        )
-        self.blocked_ips: Dict[str, datetime] = {}
+        """Initialize the process termination action."""
+        self.logger = logging.getLogger("siem.response.terminate_process")
         self.platform = platform.system().lower()
-        self.logger = logging.getLogger("siem.response.block_ip")
+        self.whitelist = set(self.config.get('whitelisted_processes', []))
         
-        # Platform-specific commands
-        self._init_platform_commands()
-    
-    def _init_platform_commands(self) -> None:
-        """Initialize platform-specific firewall commands."""
-        if self.platform == 'windows':
-            self.add_rule_cmd = [
-                'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                'name="SIEM Blocked IP {ip}"',
-                'dir=out',
-                'action=block',
-                'enable=yes',
-                'remoteip={ip}'
-            ]
-            self.delete_rule_cmd = [
-                'netsh', 'advfirewall', 'firewall', 'delete', 'rule',
-                'name="SIEM Blocked IP {ip}"'
-            ]
-        elif self.platform == 'linux':
-            # Using iptables for Linux
-            self.add_rule_cmd = [
-                'iptables', '-A', 'INPUT',
-                '-s', '{ip}',
-                '-j', 'DROP'
-            ]
-            self.delete_rule_cmd = [
-                'iptables', '-D', 'INPUT',
-                '-s', '{ip}',
-                '-j', 'DROP'
-            ]
-        else:
-            self.logger.warning(f"Unsupported platform for IP blocking: {self.platform}")
-            self.add_rule_cmd = None
-            self.delete_rule_cmd = None
-    
-    def _block_ip_windows(self, ip: str) -> bool:
-        """Block an IP address on Windows."""
-        try:
-            cmd = [part.format(ip=ip) for part in self.add_rule_cmd]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            self.logger.info(f"Blocked IP {ip} on Windows: {result.stdout}")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to block IP {ip} on Windows: {e.stderr}")
-            return False
-    
-    def _block_ip_linux(self, ip: str) -> bool:
-        """Block an IP address on Linux."""
-        try:
-            cmd = [part.format(ip=ip) for part in self.add_rule_cmd]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            self.logger.info(f"Blocked IP {ip} on Linux")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to block IP {ip} on Linux: {e.stderr}")
-            return False
-    
-    def execute(self, alert: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the IP blocking action."""
-        # Extract IPs from the alert
-        ips = set()
+    def execute(self, alert: Dict[str, Any]) -> bool:
+        """
+        Terminate the process specified in the alert.
         
-        # Get IPs from related.ips if available
-        for ip in alert.get('related', {}).get('ips', []):
-            if self._is_valid_ip(ip):
-                ips.add(ip)
-        
-        # Also check source.ip if available
-        if 'source' in alert and 'ip' in alert['source']:
-            ip = alert['source']['ip']
-            if self._is_valid_ip(ip):
-                ips.add(ip)
-        
-        if not ips:
-            return self._log_action('block_ip', {
-                'success': False,
-                'message': 'No valid IP addresses found in alert',
-                'target': {}
-            })
-        
-        results = {}
-        for ip in ips:
-            # Skip if already blocked
-            if ip in self.blocked_ips:
-                self.logger.debug(f"IP {ip} is already blocked")
-                results[ip] = 'already_blocked'
-                continue
+        Args:
+            alert: Dictionary containing alert details including process information
             
-            # Block the IP
-            success = False
-            if self.platform == 'windows':
-                success = self._block_ip_windows(ip)
-            elif self.platform == 'linux':
-                success = self._block_ip_linux(ip)
-            
-            if success:
-                self.blocked_ips[ip] = datetime.utcnow()
-                results[ip] = 'blocked'
-            else:
-                results[ip] = 'failed'
-        
-        return self._log_action('block_ip', {
-            'success': any(v == 'blocked' for v in results.values()),
-            'message': f"Blocked IPs: {', '.join(ip for ip, status in results.items() if status == 'blocked')}",
-            'target': {'ips': list(ips), 'results': results}
-        })
-    
-    def _is_valid_ip(self, ip: str) -> bool:
-        """Check if an IP address is valid."""
+        Returns:
+            bool: True if process was terminated successfully, False otherwise
+        """
         try:
-            socket.inet_pton(socket.AF_INET, ip)
-            return True
-        except socket.error:
-            try:
-                socket.inet_pton(socket.AF_INET6, ip)
-                return True
-            except socket.error:
+            process_info = alert.get('process', {})
+            pid = process_info.get('pid')
+            name = process_info.get('name', '').lower()
+            
+            if not pid:
+                self.logger.warning("No process ID in alert")
                 return False
+                
+            # Check if process is whitelisted
+            if name in self.whitelist:
+                self.logger.info(f"Process {name} (PID: {pid}) is whitelisted, skipping termination")
+                return False
+                
+            # Additional safety check - verify process exists
+            if not psutil.pid_exists(pid):
+                self.logger.warning(f"Process with PID {pid} does not exist")
+                return False
+                
+            # Terminate the process
+            if self.platform == 'windows':
+                result = subprocess.run(
+                    ['taskkill', '/F', '/PID', str(pid)],
+                    capture_output=True,
+                    text=True
+                )
+            else:
+                result = subprocess.run(
+                    ['kill', '-9', str(pid)],
+                    capture_output=True,
+                    text=True
+                )
+                
+            if result.returncode == 0:
+                self.logger.info(f"Successfully terminated process {name} (PID: {pid})")
+                return True
+            else:
+                self.logger.error(
+                    f"Failed to terminate process {name} (PID: {pid}): "
+                    f"{result.stderr or result.stdout}"
+                )
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error terminating process: {str(e)}", exc_info=True)
+            return False
 
-
-class QuarantineFileAction(ResponseAction):
-    """Quarantines a suspicious file."""
+class MemoryDumpAction(ResponseAction):
+    """Captures a memory dump of a suspicious process for forensic analysis.
+    
+    On Windows, requires Sysinternals Procdump (https://learn.microsoft.com/en-us/sysinternals/downloads/procdump)
+    On Linux, requires gcore (part of gdb)
+    """
     
     def _setup(self) -> None:
-        """Set up the quarantine action."""
-        self.quarantine_dir = self.config.get(
-            'quarantine_dir',
-            os.path.join(os.path.expanduser('~'), 'quarantine')
-        )
+        """Initialize the memory dump action."""
+        self.logger = logging.getLogger("siem.response.memory_dump")
+        self.platform = platform.system().lower()
+        self.output_dir = self.config.get('output_dir', '/var/forensics/memory_dumps')
+        self.compress = self.config.get('compress', True)
+        self.required_tools = self._get_required_tools()
         
-        # Create quarantine directory if it doesn't exist
-        os.makedirs(self.quarantine_dir, exist_ok=True)
-        
-        self.logger = logging.getLogger("siem.response.quarantine_file")
-    
-    def execute(self, alert: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the file quarantine action."""
-        if 'file' not in alert or 'path' not in alert['file']:
-            return self._log_action('quarantine_file', {
-                'success': False,
-                'message': 'No file path in alert',
-                'target': {}
-            })
-        
-        file_path = alert['file']['path']
-        
-        if not os.path.exists(file_path):
-            return self._log_action('quarantine_file', {
-                'success': False,
-                'message': f'File not found: {file_path}',
-                'target': {'path': file_path}
-            })
-        
+        # Create output directory if it doesn't exist
         try:
-            # Generate a unique quarantine filename
-            file_name = os.path.basename(file_path)
-            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            quarantined_name = f"{timestamp}_{file_name}"
-            quarantine_path = os.path.join(self.quarantine_dir, quarantined_name)
+            os.makedirs(self.output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.error(f"Failed to create output directory {self.output_dir}: {str(e)}")
+            raise
+    
+    def _get_required_tools(self) -> Dict[str, List[str]]:
+        """Return the required tools for the current platform."""
+        if self.platform == 'windows':
+            return {
+                'procdump': [
+                    'Download from: https://learn.microsoft.com/en-us/sysinternals/downloads/procdump',
+                    'Add the directory containing procdump.exe to your PATH',
+                    'Accept the Sysinternals license agreement on first run'
+                ]
+            }
+        else:
+            return {
+                'gcore': [
+                    'Install gdb package (e.g., `sudo apt-get install gdb` on Debian/Ubuntu)',
+                    'Ensure gcore is in your PATH'
+                ]
+            }
+    
+    def _check_prerequisites(self) -> Optional[Dict[str, str]]:
+        """Check if required tools are available."""
+        missing_tools = []
+        
+        for tool in self.required_tools.keys():
+            try:
+                if self.platform == 'windows':
+                    subprocess.run(
+                        ['where', tool],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=True
+                    )
+                else:
+                    subprocess.run(
+                        ['which', tool],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=True
+                    )
+            except (subprocess.SubprocessError, FileNotFoundError):
+                missing_tools.append(tool)
+        
+        if missing_tools:
+            error_msg = "Missing required tools for memory dump:\n"
+            for tool in missing_tools:
+                error_msg += f"\n{tool} is required but not found.\n"
+                error_msg += "\n".join(f"  - {step}" for step in self.required_tools[tool])
+                error_msg += "\n"
+            return {"status": "error", "message": error_msg}
+        return None
+        
+    def execute(self, alert: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Capture a memory dump of the specified process.
+        
+        Args:
+            alert: Dictionary containing alert details including process information
             
-            # Move the file to quarantine
-            os.rename(file_path, quarantine_path)
+        Returns:
+            Dict containing status and output file path or error message
+        """
+        try:
+            # Check prerequisites first
+            prereq_check = self._check_prerequisites()
+            if prereq_check:
+                return prereq_check
+                
+            process_info = alert.get('process', {})
+            pid = process_info.get('pid')
             
-            # Optionally, log the quarantine action
-            self.logger.info(f"Quarantined file: {file_path} -> {quarantine_path}")
+            if not pid:
+                error_msg = "No process ID in alert"
+                self.logger.warning(error_msg)
+                return {"status": "error", "message": error_msg}
             
-            return self._log_action('quarantine_file', {
-                'success': True,
-                'message': f'Successfully quarantined {file_path}',
-                'target': {
-                    'original_path': file_path,
-                    'quarantine_path': quarantine_path
+            # Verify the process exists
+            try:
+                psutil.Process(pid)
+            except psutil.NoSuchProcess:
+                error_msg = f"Process with PID {pid} does not exist"
+                self.logger.warning(error_msg)
+                return {"status": "error", "message": error_msg}
+                
+            # Generate output filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(
+                self.output_dir,
+                f"memory_dump_pid{pid}_{timestamp}.dmp"
+            )
+            
+            # Platform-specific memory dumping
+            if self.platform == 'windows':
+                result = self._dump_windows(pid, output_file)
+            else:
+                result = self._dump_linux(pid, output_file)
+            
+            if result['status'] == 'success':
+                self.logger.info(f"Successfully created memory dump at {output_file}")
+                return {
+                    "status": "success",
+                    "output_file": output_file,
+                    "size_mb": os.path.getsize(output_file) / (1024 * 1024),
+                    "message": "Memory dump completed successfully"
                 }
-            })
+            return result
+                
+        except Exception as e:
+            error_msg = f"Unexpected error creating memory dump: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {
+                "status": "error",
+                "message": error_msg
+            }
+    
+    def _dump_windows(self, pid: int, output_file: str) -> Dict[str, str]:
+        """Create a memory dump on Windows using procdump."""
+        try:
+            result = subprocess.run(
+                ['procdump', '-accepteula', '-ma', str(pid), output_file],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode != 0 or not os.path.exists(output_file):
+                error_msg = result.stderr or "Unknown error creating memory dump"
+                if "The system cannot find the file specified" in error_msg:
+                    error_msg = ("procdump not found. Please install Sysinternals Procdump from "
+                               "https://learn.microsoft.com/en-us/sysinternals/downloads/procdump and ensure it's in your PATH.")
+                self.logger.error(f"Failed to create memory dump: {error_msg}")
+                return {
+                    "status": "error",
+                    "message": f"Failed to create memory dump: {error_msg}"
+                }
+                
+            return {"status": "success"}
+            
+        except subprocess.TimeoutExpired:
+            error_msg = "Memory dump timed out after 5 minutes"
+            self.logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
             
         except Exception as e:
-            self.logger.error(f"Failed to quarantine file {file_path}: {str(e)}")
-            return self._log_action('quarantine_file', {
-                'success': False,
-                'message': f'Failed to quarantine file: {str(e)}',
-                'target': {'path': file_path}
-            })
+            error_msg = f"Error creating memory dump: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {"status": "error", "message": error_msg}
+    
+    def _dump_linux(self, pid: int, output_file: str) -> Dict[str, str]:
+        """Create a memory dump on Linux using gcore."""
+        try:
+            result = subprocess.run(
+                ['gcore', '-o', output_file, str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode != 0 or not any(f.startswith(os.path.basename(output_file)) 
+                                              for f in os.listdir(self.output_dir)):
+                error_msg = result.stderr or "Unknown error creating memory dump"
+                if "command not found" in error_msg:
+                    error_msg = ("gcore not found. Please install gdb package (e.g., "
+                               "`sudo apt-get install gdb` on Debian/Ubuntu).")
+                self.logger.error(f"Failed to create memory dump: {error_msg}")
+                return {
+                    "status": "error",
+                    "message": f"Failed to create memory dump: {error_msg}"
+                }
+                
+            return {"status": "success"}
+            
+        except subprocess.TimeoutExpired:
+            error_msg = "Memory dump timed out after 5 minutes"
+            self.logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+            
+        except Exception as e:
+            error_msg = f"Error creating memory dump: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {"status": "error", "message": error_msg}
 
-
-class NotifyAction(ResponseAction):
-    """Sends a notification about an alert."""
-    
-    def _setup(self) -> None:
-        """Set up the notification action."""
-        self.recipients = self.config.get('recipients', [])
-        self.notification_method = self.config.get('method', 'log')
-        self.logger = logging.getLogger("siem.response.notify")
-    
-    def execute(self, alert: Dict[str, Any]) -> Dict[str, Any]:
-        """Send a notification about the alert."""
-        if not self.recipients:
-            self.logger.warning("No recipients configured for notification")
-            return self._log_action('notify', {
-                'success': False,
-                'message': 'No recipients configured',
-                'target': {}
-            })
-        
-        # Format the notification
-        notification = self._format_notification(alert)
-        
-        # Send the notification using the configured method
-        success = False
-        if self.notification_method == 'log':
-            self.logger.info(f"[NOTIFICATION] {notification}")
-            success = True
-        elif self.notification_method == 'email':
-            success = self._send_email(notification)
-        elif self.notification_method == 'slack':
-            success = self._send_slack(notification)
-        else:
-            self.logger.warning(f"Unsupported notification method: {self.notification_method}")
-        
-        return self._log_action('notify', {
-            'success': success,
-            'message': f'Sent {self.notification_method} notification',
-            'target': {
-                'recipients': self.recipients,
-                'method': self.notification_method,
-                'content': notification
-            }
-        })
-    
-    def _format_notification(self, alert: Dict[str, Any]) -> str:
-        """Format the notification message."""
-        return (
-            f"[ALERT] {alert.get('event', {}).get('signature', 'Unknown threat')}\n"
-            f"Severity: {alert.get('event', {}).get('severity', 'unknown')}\n"
-            f"Time: {alert.get('@timestamp', 'unknown')}\n"
-            f"Description: {alert.get('message', 'No description')}"
-        )
-    
-    def _send_email(self, message: str) -> bool:
-        """Send an email notification."""
-        # This is a placeholder - implement actual email sending logic
-        self.logger.info(f"Would send email to {self.recipients}: {message}")
-        return True
-    
-    def _send_slack(self, message: str) -> bool:
-        """Send a Slack notification."""
-        # This is a placeholder - implement actual Slack integration
-        self.logger.info(f"Would send Slack message: {message}")
-        return True
+# Export available actions
+ACTIONS = {
+    'terminate_process': TerminateProcessAction,
+    'memory_dump': MemoryDumpAction
+}

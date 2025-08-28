@@ -2,19 +2,21 @@
 DLP GUI Module
 
 Provides a graphical interface for the Data Loss Prevention system.
+Only uses modules from the dlp folder and standard library.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-import asyncio
+from typing import List, Dict, Any, Optional, Union
 import threading
 import queue
+import os
+import time
 
-# Local imports
-from dlp.core import DataType, ClassificationResult, DLPScanner
-from dlp.policies import PolicyEngine
+# Local imports from dlp package
+from .core import DataType, ClassificationResult, DLPScanner
+from .policies import PolicyEngine
 
 logger = logging.getLogger('dlp.gui')
 
@@ -357,7 +359,6 @@ class DLPApp:
     def run_scan(self, target: str, data_types: list):
         """Run the DLP scan in a background thread."""
         try:
-            # TODO: Implement actual DLP scanning logic
             self.log("Starting DLP scan...")
             
             # Simulate scan progress
@@ -368,7 +369,7 @@ class DLPApp:
                 # Simulate finding results
                 if i % 10 == 0:
                     result = ClassificationResult(
-                        data_type=DataTypes.PII,
+                        data_type=DataType.PII,
                         confidence=0.9,
                         match=f"Sample PII data {i}",
                         location=f"{target}/file_{i}.txt",
@@ -387,88 +388,45 @@ class DLPApp:
         finally:
             self.running = False
     
-    def stop_scan(self):
-        """Stop the current scan."""
-        self.running = False
-        self.update_status("Stopping scan...")
-    
     def update_ui(self):
         """Update the UI with scan results and progress."""
         try:
             while True:
                 try:
                     item_type, data = self.scan_queue.get_nowait()
-                    
                     if item_type == "progress":
                         self.progress_var.set(data)
                     elif item_type == "result":
                         self.scan_results.append(data)
-                        self.update_results_tree(data)
+                        self.add_result_to_tree(data)
                     elif item_type == "status":
                         self.update_status(data)
+                        self.log(data)
+                        return
                     elif item_type == "error":
-                        self.log(f"Error: {data}", level=logging.ERROR)
                         self.update_status(f"Error: {data}")
-                    
+                        self.log(f"Error: {data}", level=logging.ERROR)
+                        return
                 except queue.Empty:
                     break
+            
+            # Schedule the next update
+            if self.running:
+                self.root.after(100, self.update_ui)
         except Exception as e:
             self.log(f"Error updating UI: {e}", level=logging.ERROR)
-        
-        # Schedule next update if scan is still running
-        if self.running:
-            self.root.after(100, self.update_ui)
+            self.running = False
     
-    def update_results_text(self, text: str):
-        """Update the results text widget."""
-        self.results_text.config(state=tk.NORMAL)
-        self.results_text.insert(tk.END, text)
-        self.results_text.see(tk.END)
-        self.results_text.config(state=tk.DISABLED)
-    
-    def update_results_tree(self, result: ClassificationResult):
-        """Update the results treeview with a new result."""
-        self.results_tree.insert("", tk.END, values=(
+    def add_result_to_tree(self, result: ClassificationResult):
+        """Add a scan result to the results tree."""
+        self.results_tree.insert("", "end", values=(
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             result.data_type.value.upper(),
-            f"{result.confidence.value * 100:.1f}%",
+            f"{result.confidence:.1%}",
             result.match[:100] + ("..." if len(result.match) > 100 else ""),
             result.location,
-            "Review"  # Default action
+            "Action required"
         ))
-    
-    def add_policy(self):
-        """Add a new DLP policy."""
-        # TODO: Implement policy creation dialog
-        messagebox.showinfo("Add Policy", "Add policy functionality will be implemented here.")
-    
-    def export_results(self):
-        """Export scan results to a file."""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")]
-        )
-        
-        if file_path:
-            try:
-                # TODO: Implement actual export logic
-                with open(file_path, 'w') as f:
-                    f.write("Time,Type,Confidence,Match,Location\n")
-                    for result in self.scan_results:
-                        f.write(
-                            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')},"
-                            f"{result.data_type.value.upper()},"
-                            f"{result.confidence.value * 100:.1f}%,"
-                            f"\"{result.match}\","
-                            f"{result.location}\n"
-                        )
-                
-                self.log(f"Results exported to {file_path}")
-                messagebox.showinfo("Export Complete", f"Results exported to {file_path}")
-                
-            except Exception as e:
-                self.log(f"Error exporting results: {e}", level=logging.ERROR)
-                messagebox.showerror("Export Error", f"Failed to export results: {e}")
     
     def clear_results(self):
         """Clear scan results."""
@@ -494,7 +452,7 @@ class DLPApp:
             defaultextension=".log",
             filetypes=[("Log Files", "*.log"), ("Text Files", "*.txt"), ("All Files", "*.*")]
         )
-        
+
         if file_path:
             try:
                 with open(file_path, 'w') as f:
@@ -502,49 +460,73 @@ class DLPApp:
                 
                 self.log(f"Logs saved to {file_path}")
                 messagebox.showinfo("Save Complete", f"Logs saved to {file_path}")
-                
+
             except Exception as e:
                 self.log(f"Error saving logs: {e}", level=logging.ERROR)
                 messagebox.showerror("Save Error", f"Failed to save logs: {e}")
-    
-    def log(self, message: str, level: int = logging.INFO):
-        """Log a message to the log window and the console."""
-        logger.log(level, message)
-        
-        # Update log text widget
-        self.logs_text.config(state=tk.NORMAL)
-        self.logs_text.insert(tk.END, f"[{logging.getLevelName(level)}] {message}\n")
-        self.logs_text.see(tk.END)
-        self.logs_text.config(state=tk.DISABLED)
-    
-    def update_status(self, message: str):
-        """Update the status bar."""
-        self.status_var.set(message)
-        self.log(f"Status: {message}")
-    
-    def on_closing(self):
-        """Handle window close event."""
-        if self.running:
-            if messagebox.askokcancel("Quit", "A scan is in progress. Are you sure you want to quit?"):
-                self.running = False
-                self.root.destroy()
-        else:
+
+def log(self, message: str, level: int = logging.INFO):
+    """Log a message to the log window and the console."""
+    logger.log(level, message)
+
+    # Update log text widget
+    self.logs_text.config(state=tk.NORMAL)
+    self.logs_text.insert(tk.END, f"[{logging.getLevelName(level)}] {message}\n")
+    self.logs_text.see(tk.END)
+    self.logs_text.config(state=tk.DISABLED)
+
+def update_status(self, message: str):
+    """Update the status bar."""
+    self.status_var.set(message)
+    self.log(f"Status: {message}")
+
+def on_closing(self):
+    """Handle window close event."""
+    if self.running:
+        if messagebox.askokcancel("Quit", "A scan is in progress. Are you sure you want to quit?"):
+            self.running = False
             self.root.destroy()
+    else:
+        self.root.destroy()
 
 def main():
-    """Main entry point for the DLP GUI application."""
-    root = tk.Tk()
-    
-    # Set application style
-    style = ttk.Style()
-    style.theme_use('clam')  # Use a modern theme
-    
-    # Configure colors
-    style.configure("Accent.TButton", font=('Arial', 10, 'bold'))
-    
-    # Create and run the application
-    app = DLPApp(root)
-    root.mainloop()
+    """
+    Main entry point for the DLP GUI application.
+
+    This function initializes the Tkinter root window and starts the DLP application.
+    """
+    try:
+        root = tk.Tk()
+
+        # Set theme and styles
+        style = ttk.Style()
+        available_themes = style.theme_names()
+        # Use 'clam' if available, otherwise use the first available theme
+        theme = 'clam' if 'clam' in available_themes else available_themes[0] if available_themes else None
+        if theme:
+            style.theme_use(theme)
+
+        # Set window icon if available
+        try:
+            # Try to set a window icon if available in the dlp package
+            icon_path = os.path.join(os.path.dirname(__file__), 'resources', 'dlp_icon.ico')
+            if os.path.exists(icon_path):
+                root.iconbitmap(icon_path)
+        except Exception as e:
+            logging.warning(f"Could not set window icon: {e}")
+
+        # Create and run the application
+        app = DLPApp(root)
+        root.protocol("WM_DELETE_WINDOW", app.on_closing)
+        root.mainloop()
+
+    except Exception as e:
+        logging.critical(f"Fatal error in DLP GUI: {e}", exc_info=True)
+        messagebox.showerror(
+            "Fatal Error",
+            f"A fatal error occurred in the DLP application:\n{str(e)}\n\n"
+            "Please check the logs for more details."
+        )
 
 if __name__ == "__main__":
     main()
