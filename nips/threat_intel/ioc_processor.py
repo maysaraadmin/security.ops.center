@@ -29,7 +29,8 @@ class IOCProcessor:
         self.feed_manager = feed_manager
         self.config = config or {}
         self.domain_regex = re.compile(
-            r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$
+            r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$',
+            re.IGNORECASE
         )
         self.url_regex = re.compile(
             r'^(https?|ftp)://'  # Scheme

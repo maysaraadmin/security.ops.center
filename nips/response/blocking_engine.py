@@ -3,6 +3,7 @@ Automated Threat Blocking Engine for NIPS
 """
 import ipaddress
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, List, Optional, Set, Tuple, Union, Any

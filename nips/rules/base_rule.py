@@ -1,6 +1,50 @@
 """
 Base Rule System for NIPS Signature-Based Detection
 """
+from abc import ABC, abstractmethod
+
+class BaseRule(ABC):
+    """
+    Abstract base class for all NIPS rules.
+    All rule types should inherit from this class.
+    """
+    
+    @abstractmethod
+    def match(self, packet: dict) -> bool:
+        """
+        Check if the rule matches the given packet.
+        
+        Args:
+            packet: Dictionary containing packet data
+            
+        Returns:
+            bool: True if the rule matches, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    def to_dict(self) -> dict:
+        """
+        Convert the rule to a dictionary for serialization.
+        
+        Returns:
+            dict: Dictionary representation of the rule
+        """
+        pass
+    
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, data: dict) -> 'BaseRule':
+        """
+        Create a rule from a dictionary.
+        
+        Args:
+            data: Dictionary containing rule data
+            
+        Returns:
+            BaseRule: A new rule instance
+        """
+        pass
 import re
 import json
 from dataclasses import dataclass, field

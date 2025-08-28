@@ -162,6 +162,88 @@ class DLPApp:
         )
         self.results_text.pack(fill=tk.BOTH, expand=True, pady=5)
     
+    def add_policy(self):
+        """Open a dialog to add a new DLP policy."""
+        # Create a top-level window for the policy dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Add DLP Policy")
+        dialog.geometry("500x400")
+        dialog.transient(self.root)  # Set to be on top of the main window
+        dialog.grab_set()  # Make the dialog modal
+        
+        # Policy name
+        ttk.Label(dialog, text="Policy Name:").pack(pady=(10, 0))
+        name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=name_var, width=50).pack(padx=10, pady=5)
+        
+        # Data type
+        ttk.Label(dialog, text="Data Type:").pack(pady=(10, 0))
+        data_type_var = tk.StringVar()
+        data_types = ["PII", "PCI", "PHI", "Intellectual Property", "Credentials"]
+        ttk.Combobox(dialog, textvariable=data_type_var, values=data_types).pack(padx=10, pady=5)
+        
+        # Action
+        ttk.Label(dialog, text="Action:").pack(pady=(10, 0))
+        action_var = tk.StringVar()
+        actions = ["Alert", "Block", "Quarantine", "Log"]
+        ttk.Combobox(dialog, textvariable=action_var, values=actions).pack(padx=10, pady=5)
+        
+        # Status
+        ttk.Label(dialog, text="Status:").pack(pady=(10, 0))
+        status_var = tk.StringVar(value="Enabled")
+        ttk.Combobox(dialog, textvariable=status_var, values=["Enabled", "Disabled"]).pack(padx=10, pady=5)
+        
+        # Description
+        ttk.Label(dialog, text="Description:").pack(pady=(10, 0))
+        desc_text = tk.Text(dialog, height=5, width=50)
+        desc_text.pack(padx=10, pady=5)
+        
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        
+        def save_policy():
+            """Save the new policy and update the UI."""
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showerror("Error", "Policy name is required")
+                return
+                
+            policy = {
+                "name": name,
+                "data_type": data_type_var.get(),
+                "action": action_var.get(),
+                "status": status_var.get(),
+                "description": desc_text.get("1.0", tk.END).strip()
+            }
+            
+            # Add to policy engine
+            try:
+                self.policy_engine.add_policy(policy)
+                self.log(f"Added policy: {name}", logging.INFO)
+                self.update_policies_list()
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to add policy: {str(e)}")
+        
+        ttk.Button(btn_frame, text="Save", command=save_policy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def update_policies_list(self):
+        """Update the policies list in the UI."""
+        # Clear existing items
+        for item in self.policies_tree.get_children():
+            self.policies_tree.delete(item)
+        
+        # Add policies from policy engine
+        for policy in self.policy_engine.list_policies():
+            self.policies_tree.insert("", tk.END, values=(
+                policy.get("name", ""),
+                policy.get("data_type", ""),
+                policy.get("action", ""),
+                policy.get("status", "")
+            ))
+    
     def setup_policies_tab(self):
         """Setup the policies configuration tab."""
         self.policies_tab = ttk.Frame(self.notebook)
@@ -322,6 +404,16 @@ class DLPApp:
         if target:
             self.target_var.set(target)
     
+    def stop_scan(self):
+        """Stop the currently running DLP scan."""
+        if self.running:
+            self.running = False
+            self.update_status("Scan stopped by user")
+            self.log("Scan stopped by user", logging.INFO)
+            # Re-enable the start button and disable stop button
+            self.scan_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+    
     def start_scan(self):
         """Start the DLP scan."""
         target = self.target_var.get().strip()
@@ -343,6 +435,10 @@ class DLPApp:
         self.update_status(f"Scanning {target}...")
         self.progress_var.set(0)
         self.update_results_text("Starting scan...\n")
+        
+        # Update button states
+        self.scan_btn.config(state=tk.DISABLED)
+        self.stop_btn.config(state=tk.NORMAL)
         
         # Start scan in background thread
         self.running = True
@@ -425,26 +521,98 @@ class DLPApp:
             f"{result.confidence:.1%}",
             result.match[:100] + ("..." if len(result.match) > 100 else ""),
             result.location,
-            "Action required"
+            ""  # Action column
         ))
+        
+    def export_results(self):
+        """Export scan results to a file."""
+        if not self.scan_results:
+            messagebox.showinfo("Info", "No results to export.")
+            return
+            
+        # Ask user for save location
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+            title="Save Results As"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+            
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # Write header
+                writer.writerow(["Time", "Type", "Confidence", "Match", "Location"])
+                
+                # Write data from results tree
+                for item in self.results_tree.get_children():
+                    values = self.results_tree.item(item, 'values')
+                    if values and len(values) >= 5:  # Ensure we have all columns
+                        writer.writerow([
+                            values[0],  # Time
+                            values[1],  # Type
+                            values[2],  # Confidence
+                            values[3],  # Match
+                            values[4]   # Location
+                        ])
+                    
+            self.log(f"Results exported to: {file_path}", logging.INFO)
+            messagebox.showinfo("Success", f"Results exported successfully to:\n{file_path}")
+            
+        except Exception as e:
+            error_msg = f"Failed to export results: {str(e)}"
+            self.log(error_msg, logging.ERROR)
+            messagebox.showerror("Export Error", error_msg)
     
     def clear_results(self):
-        """Clear scan results."""
-        if messagebox.askyesno("Confirm", "Are you sure you want to clear all results?"):
-            self.scan_results.clear()
-            self.results_tree.delete(*self.results_tree.get_children())
-            self.update_results_text("Results cleared.\n")
+        """Clear all scan results from the UI and internal storage."""
+        # Clear the results tree
+        for item in self.results_tree.get_children():
+            self.results_tree.delete(item)
+            
+        # Clear the internal results list
+        self.scan_results.clear()
+        
+        # Update the status
+        self.update_status("Results cleared")
+        self.log("Scan results cleared", logging.INFO)
+        
+        # Reset progress bar
+        self.progress_var.set(0)
     
-    def update_log_level(self, level: str):
-        """Update the log level filter."""
-        logging.getLogger().setLevel(level)
-        self.log(f"Log level set to {level}")
+    def update_log_level(self, level):
+        """Update the log level filter.
+        
+        Args:
+            level (str): The new log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        """
+        try:
+            # Convert string level to logging level
+            log_level = getattr(logging, level.upper())
+            
+            # Update the root logger level
+            logging.getLogger().setLevel(log_level)
+            
+            # Update the log handler level if it exists
+            for handler in logging.getLogger().handlers:
+                handler.setLevel(log_level)
+                
+            self.log(f"Log level changed to {level}", logging.INFO)
+            
+        except Exception as e:
+            self.log(f"Failed to update log level: {str(e)}", logging.ERROR)
     
     def clear_logs(self):
-        """Clear the logs."""
-        self.logs_text.config(state=tk.NORMAL)
-        self.logs_text.delete(1.0, tk.END)
-        self.logs_text.config(state=tk.DISABLED)
+        """Clear the log display."""
+        try:
+            self.logs_text.config(state=tk.NORMAL)
+            self.logs_text.delete(1.0, tk.END)
+            self.logs_text.config(state=tk.DISABLED)
+            self.log("Log display cleared", logging.INFO)
+        except Exception as e:
+            self.log(f"Failed to clear logs: {str(e)}", logging.ERROR)
     
     def save_logs(self):
         """Save logs to a file."""
@@ -460,34 +628,40 @@ class DLPApp:
                 
                 self.log(f"Logs saved to {file_path}")
                 messagebox.showinfo("Save Complete", f"Logs saved to {file_path}")
-
+            
             except Exception as e:
                 self.log(f"Error saving logs: {e}", level=logging.ERROR)
                 messagebox.showerror("Save Error", f"Failed to save logs: {e}")
-
-def log(self, message: str, level: int = logging.INFO):
-    """Log a message to the log window and the console."""
-    logger.log(level, message)
-
-    # Update log text widget
-    self.logs_text.config(state=tk.NORMAL)
-    self.logs_text.insert(tk.END, f"[{logging.getLevelName(level)}] {message}\n")
-    self.logs_text.see(tk.END)
-    self.logs_text.config(state=tk.DISABLED)
-
-def update_status(self, message: str):
-    """Update the status bar."""
-    self.status_var.set(message)
-    self.log(f"Status: {message}")
-
-def on_closing(self):
-    """Handle window close event."""
-    if self.running:
-        if messagebox.askokcancel("Quit", "A scan is in progress. Are you sure you want to quit?"):
-            self.running = False
+    
+    def log(self, message: str, level: int = logging.INFO):
+        """Log a message to the log window and the console."""
+        logger.log(level, message)
+        
+        # Also update the log text widget if it exists
+        if hasattr(self, 'logs_text'):
+            self.logs_text.config(state=tk.NORMAL)
+            self.logs_text.insert(tk.END, f"{message}\n")
+            self.logs_text.see(tk.END)
+            self.logs_text.config(state=tk.DISABLED)
+    
+    def update_status(self, message: str):
+        """Update the status bar with a message.
+        
+        Args:
+            message (str): The message to display in the status bar
+        """
+        if hasattr(self, 'status_var'):
+            self.status_var.set(message)
+        self.log(f"Status: {message}", logging.INFO)
+    
+    def on_closing(self):
+        """Handle window close event."""
+        if self.running:
+            if messagebox.askokcancel("Quit", "A scan is in progress. Are you sure you want to quit?"):
+                self.running = False
+                self.root.destroy()
+        else:
             self.root.destroy()
-    else:
-        self.root.destroy()
 
 def main():
     """

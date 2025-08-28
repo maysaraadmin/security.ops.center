@@ -7,6 +7,7 @@ Uses only standard libraries and modules from the nips folder.
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 import logging
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple, Callable
 import os
@@ -56,28 +57,103 @@ class NIPSGUI:
     
     def __init__(self, root):
         """Initialize the NIPS GUI."""
-        self.root = root
-        self.root.title("Network Intrusion Prevention System")
-        self.root.geometry("1400x900")
-        self.root.minsize(1200, 700)
+        logger.info("Initializing NIPS GUI...")
         
-        # Initialize NIPS components
-        self.monitoring = False
-        self.alerts = []
-        self.alert_queue = queue.Queue()
-        self.rules = {}
-        self.threats_blocked = 0
-        self.packets_analyzed = 0
-        self.connections_active = 0
-        self.start_time = datetime.now()
+        try:
+            self.root = root
+            logger.debug("Root window created")
+            
+            # Set window properties
+            self.root.title("Network Intrusion Prevention System (NIPS)")
+            self.root.geometry("1200x800")
+            self.root.minsize(1000, 700)
+            logger.debug("Window properties set")
+            
+            # Make the window resizable
+            self.root.grid_rowconfigure(0, weight=1)
+            self.root.grid_columnconfigure(0, weight=1)
+            logger.debug("Window resizing configured")
+            
+            # Initialize NIPS components
+            self.monitoring = False
+            self.alerts = []
+            self.alert_queue = queue.Queue()
+            self.rules = {}
+            self.threats_blocked = 0
+            self.packets_analyzed = 0
+            self.connections_active = 0
+            self.start_time = datetime.now()
+            
+            # Set up the UI
+            self.setup_ui()
+            logger.info("NIPS GUI initialization complete")
+            
+            # Ensure window is in the foreground and focused
+            self.root.lift()
+            self.root.attributes('-topmost', True)
+            self.root.after(100, lambda: self.root.attributes('-topmost', False))
+            self.root.focus_force()
+            logger.debug("Window focus and visibility set")
+            
+        except Exception as e:
+            logger.error(f"Error initializing NIPS GUI: {e}")
+            raise
         
-        # Initialize NIPS modules
-        self.forensic_logger = ForensicLogger()
+        # Initialize NIPS modules with default configurations
+        self.forensic_logger = ForensicLogger({
+            'log_dir': 'logs',
+            'max_size': 100,  # MB
+            'backup_count': 30,
+            'compress': True,
+            'log_level': 'INFO',
+            'enable_console': True,
+            'enable_syslog': False,
+            'syslog_address': 'localhost:514',
+            'enable_network': False,
+            'network_endpoints': []
+        })
         self.tls_inspector = TLSInspector()
         self.blocking_engine = BlockingEngine()
-        self.threat_feed = ThreatFeedManager()
-        self.ioc_processor = IOCProcessor()
-        self.cluster_manager = ClusterManager()
+        
+        # Initialize ThreatFeedManager with default configuration
+        self.threat_feed = ThreatFeedManager({
+            'cache_ttl': 3600,  # 1 hour
+            'feeds': {
+                'alienvault_otx': {
+                    'enabled': False,  # Disabled by default as it requires API key
+                    'api_key': '',
+                    'update_interval': 3600  # 1 hour
+                },
+                'mitre_attack': {
+                    'enabled': True,
+                    'update_interval': 86400  # 24 hours
+                },
+                'file_hash': {
+                    'enabled': True,
+                    'sources': [],
+                    'update_interval': 3600  # 1 hour
+                }
+            },
+            'enable_caching': True,
+            'max_cache_size': 10000,
+            'log_level': 'INFO'
+        })
+        
+        # Initialize IOCProcessor with the threat feed manager
+        self.ioc_processor = IOCProcessor(feed_manager=self.threat_feed)
+        
+        # Initialize ClusterManager with default node configuration
+        self.cluster_manager = ClusterManager(
+            node_id='nips_gui_node',
+            cluster_nodes={
+                'nips_gui_node': {
+                    'host': 'localhost',
+                    'port': 5000,
+                    'role': 'gui',
+                    'status': 'active'
+                }
+            }
+        )
         
         # Initialize UI state
         self.setup_ui()
@@ -125,9 +201,6 @@ class NIPSGUI:
         self.metrics = {}
         self.running = False
         self.monitoring = False
-        
-        # Setup logging
-        self.setup_logging()
         
         # Setup UI tabs
         self.setup_dashboard_tab()
@@ -283,6 +356,124 @@ class NIPSGUI:
             text="Save Configuration", 
             command=self.save_monitor_config
         ).pack(pady=10)
+        
+    def import_rules(self):
+        """Import rules from a JSON file."""
+        file_path = filedialog.askopenfilename(
+            title="Select Rules File",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        
+        if not file_path:
+            return  # User cancelled
+            
+        try:
+            with open(file_path, 'r') as f:
+                rules_data = json.load(f)
+                
+            if not isinstance(rules_data, list):
+                messagebox.showerror("Error", "Invalid rules format: expected a list of rules")
+                return
+                
+            # Add each rule to the system
+            for rule_data in rules_data:
+                # Validate required fields
+                required_fields = ['id', 'name', 'severity', 'action']
+                if not all(field in rule_data for field in required_fields):
+                    messagebox.showerror("Error", f"Invalid rule format: missing required fields in rule {rule_data.get('id', 'unknown')}")
+                    continue
+                    
+                # Add the rule to the system
+                self.rules[rule_data['id']] = rule_data
+                
+            # Refresh the rules display
+            self.load_rules()
+            messagebox.showinfo("Success", f"Successfully imported {len(rules_data)} rules")
+            
+        except json.JSONDecodeError:
+            messagebox.showerror("Error", "Invalid JSON file")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to import rules: {e}")
+            
+    def export_rules(self):
+        """Export rules to a JSON file."""
+        if not self.rules:
+            messagebox.showinfo("Info", "No rules to export")
+            return
+            
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            title="Save Rules As"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+            
+        try:
+            # Convert rules to a list for export
+            rules_list = list(self.rules.values())
+            
+            with open(file_path, 'w') as f:
+                json.dump(rules_list, f, indent=4)
+                
+            messagebox.showinfo("Success", f"Successfully exported {len(rules_list)} rules to {file_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export rules: {e}")
+            
+    def filter_rules(self, event=None):
+        """Filter the rules list based on search text."""
+        search_text = self.rule_search.get().lower()
+        
+        # Clear current selection
+        for item in self.rules_tree.get_children():
+            self.rules_tree.delete(item)
+            
+        # If search is empty, show all rules
+        if not search_text:
+            self.load_rules()
+            return
+            
+        # Filter and show matching rules
+        for rule_id, rule in self.rules.items():
+            # Check if search text matches any rule field
+            match = any(
+                search_text in str(rule.get(field, '')).lower()
+                for field in ['id', 'name', 'severity', 'protocol', 'source', 'destination', 'action']
+            )
+            
+            if match:
+                self.rules_tree.insert(
+                    '', 'end',
+                    values=(
+                        rule.get('enabled', False),
+                        rule_id,
+                        rule.get('name', ''),
+                        rule.get('severity', 'medium'),
+                        rule.get('protocol', 'any'),
+                        rule.get('source', 'any'),
+                        rule.get('destination', 'any'),
+                        rule.get('action', 'alert')
+                    )
+                )
+        
+    def save_monitor_config(self):
+        """Save monitoring configuration to a file."""
+        config = {
+            'interface': self.interface_var.get(),
+            'promiscuous': self.promisc_var.get(),
+            'timeout': int(self.timeout_var.get()),
+            'filter': self.filter_var.get(),
+            'max_packet': int(self.max_packet.get())
+        }
+        
+        try:
+            with open('monitor_config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+            messagebox.showinfo("Success", "Monitoring configuration saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save configuration: {e}")
     
     def setup_rules_tab(self):
         """Set up the rules management tab."""
@@ -502,9 +693,968 @@ class NIPSGUI:
     def start_monitoring(self):
         """Start monitoring network traffic."""
         logger.info("Starting network monitoring")
-        self.monitoring = True
-        self.monitor_thread = threading.Thread(target=self.monitor_network, daemon=True)
-        self.monitor_thread.start()
+        # Start the alert processing thread
+        self.alert_processing_thread = threading.Thread(target=self.process_alerts, daemon=True)
+        self.alert_processing_thread.start()
+        
+    def clear_logs(self):
+        """Clear the logs text widget."""
+        if hasattr(self, 'log_text') and self.log_text:
+            try:
+                self.log_text.config(state=tk.NORMAL)  # Enable editing
+                self.log_text.delete(1.0, tk.END)  # Clear all text
+                self.log_text.config(state=tk.DISABLED)  # Disable editing
+                logger.info("Logs cleared")
+            except Exception as e:
+                logger.error(f"Error clearing logs: {e}")
+                messagebox.showerror("Error", f"Failed to clear logs: {str(e)}")
+                
+    def save_logs(self):
+        """Save the current logs to a file."""
+        if not hasattr(self, 'log_text') or not self.log_text:
+            messagebox.showwarning("No Logs", "No logs available to save.")
+            return
+            
+        try:
+            # Open file dialog to choose save location
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".log",
+                filetypes=[("Log files", "*.log"), ("Text files", "*.txt"), ("All files", "*.*")],
+                title="Save Logs As"
+            )
+            
+            if not file_path:  # User cancelled the dialog
+                return
+                
+            # Get the log content
+            log_content = self.log_text.get(1.0, tk.END)
+            
+            # Write to file
+            with open(file_path, 'w') as f:
+                f.write(log_content)
+                
+            logger.info(f"Logs saved to {file_path}")
+            messagebox.showinfo("Success", f"Logs successfully saved to {file_path}")
+            
+        except Exception as e:
+            logger.error(f"Error saving logs: {e}")
+            messagebox.showerror("Error", f"Failed to save logs: {str(e)}")
+            
+    def filter_logs(self, level):
+        """Filter logs based on the selected log level."""
+        if not hasattr(self, 'log_text') or not hasattr(self, 'log_level'):
+            return
+            
+        try:
+            # Get the current log level
+            current_level = self.log_level.get()
+            
+            # Map log level names to their numeric values
+            level_map = {
+                'DEBUG': 10,
+                'INFO': 20,
+                'WARNING': 30,
+                'ERROR': 40,
+                'CRITICAL': 50
+            }
+            
+            # Get the numeric value of the selected level
+            selected_level = level_map.get(level, 20)  # Default to INFO
+            
+            # Get all log records
+            records = self.log_handler.records if hasattr(self, 'log_handler') else []
+            
+            # Clear the current log display
+            self.log_text.config(state=tk.NORMAL)
+            self.log_text.delete(1.0, tk.END)
+            
+            # Filter and display logs based on the selected level
+            for record in records:
+                if record.levelno >= selected_level:
+                    self.log_text.insert(tk.END, f"{record.asctime} - {record.levelname} - {record.message}\n")
+            
+            # Disable editing of the log text
+            self.log_text.config(state=tk.DISABLED)
+            
+            # Auto-scroll to the bottom
+            self.log_text.see(tk.END)
+            
+            logger.debug(f"Filtered logs to show level {level} and above")
+            
+        except Exception as e:
+            logger.error(f"Error filtering logs: {e}")
+            
+    def search_logs(self, event=None):
+        """Search through the logs for the given text."""
+        if not hasattr(self, 'log_text') or not hasattr(self, 'log_search'):
+            return
+            
+        try:
+            # Get the search term
+            search_term = self.log_search.get().lower()
+            
+            # If search term is empty, reset the view
+            if not search_term:
+                self.filter_logs(self.log_level.get() if hasattr(self, 'log_level') else 'INFO')
+                return
+                
+            # Get all text from the log widget
+            self.log_text.tag_remove('found', '1.0', tk.END)
+            self.log_text.tag_configure('found', background='yellow')
+            
+            # Enable the text widget for searching
+            self.log_text.config(state=tk.NORMAL)
+            
+            # Start from the beginning
+            idx = '1.0'
+            found_count = 0
+            
+            while True:
+                # Search for the pattern
+                idx = self.log_text.search(search_term, idx, nocase=1, stopindex=tk.END)
+                
+                if not idx:
+                    break
+                    
+                # Calculate end index of the found text
+                last_idx = f"{idx}+{len(search_term)}c"
+                
+                # Add tag to the found text
+                self.log_text.tag_add('found', idx, last_idx)
+                found_count += 1
+                
+                # Move to the end of the current match
+                idx = last_idx
+            
+            # Disable editing of the log text
+            self.log_text.config(state=tk.DISABLED)
+            
+            # Update status
+            status = f"Found {found_count} occurrences of '{search_term}'"
+            if hasattr(self, 'status_bar'):
+                self.status_bar.config(text=status)
+                
+            logger.debug(f"Searched logs for '{search_term}': {found_count} results")
+            
+        except Exception as e:
+            logger.error(f"Error searching logs: {e}")
+    
+    def new_ruleset(self):
+        """Create a new rule set."""
+        try:
+            # Ask for confirmation if there are unsaved changes
+            if self.rules:
+                if not messagebox.askyesno(
+                    "New Rule Set",
+                    "This will clear all current rules. Are you sure you want to continue?"
+                ):
+                    return
+            
+            # Clear existing rules
+            self.rules = {}
+            
+            # Update the rules tree
+            self.update_rules_tree()
+            
+            # Update status
+            self.status_var.set("Created new empty rule set")
+            logger.info("Created new empty rule set")
+            
+        except Exception as e:
+            error_msg = f"Error creating new rule set: {e}"
+            messagebox.showerror("Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+            
+    def open_ruleset(self):
+        """Open a rule set from a file."""
+        try:
+            # Ask for confirmation if there are unsaved changes
+            if self.rules:
+                if not messagebox.askyesno(
+                    "Open Rule Set",
+                    "This will replace the current rules. Are you sure you want to continue?"
+                ):
+                    return
+            
+            # Open file dialog to select rule file
+            file_path = filedialog.askopenfilename(
+                title="Open Rule Set",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                initialdir=os.getcwd()
+            )
+            
+            if not file_path:
+                return  # User cancelled
+                
+            # Load rules from file
+            with open(file_path, 'r') as f:
+                rules_data = json.load(f)
+                
+            # Validate rules format
+            if not isinstance(rules_data, dict):
+                raise ValueError("Invalid rule set format: expected a dictionary")
+                
+            # Clear existing rules
+            self.rules = {}
+            
+            # Add loaded rules
+            for rule_id, rule_data in rules_data.items():
+                self.rules[rule_id] = rule_data
+                
+            # Update the rules tree
+            self.update_rules_tree()
+            
+            # Update status
+            self.status_var.set(f"Loaded {len(self.rules)} rules from {os.path.basename(file_path)}")
+            logger.info(f"Loaded {len(self.rules)} rules from {file_path}")
+            
+        except json.JSONDecodeError as e:
+            error_msg = f"Error parsing rule set file: {e}"
+            messagebox.showerror("Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+            
+        except Exception as e:
+            error_msg = f"Error loading rule set: {e}"
+            messagebox.showerror("Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+            
+    def save_ruleset(self):
+        """Save the current rule set to a file."""
+        try:
+            if not self.rules:
+                messagebox.showinfo("No Rules", "There are no rules to save.")
+                return
+                
+            # Open file dialog to select save location
+            file_path = filedialog.asksaveasfilename(
+                title="Save Rule Set As",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                initialdir=os.getcwd()
+            )
+            
+            if not file_path:
+                return  # User cancelled
+                
+            # Save rules to file
+            with open(file_path, 'w') as f:
+                json.dump(self.rules, f, indent=4)
+                
+            # Update status
+            self.status_var.set(f"Saved {len(self.rules)} rules to {os.path.basename(file_path)}")
+            logger.info(f"Saved {len(self.rules)} rules to {file_path}")
+            
+        except Exception as e:
+            error_msg = f"Error saving rule set: {e}"
+            messagebox.showerror("Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+            
+    def export_alerts(self):
+        """Export alerts to a file."""
+        try:
+            if not hasattr(self, 'alerts') or not self.alerts:
+                messagebox.showinfo("No Alerts", "There are no alerts to export.")
+                return
+                
+            # Open file dialog to select save location
+            file_path = filedialog.asksaveasfilename(
+                title="Export Alerts As",
+                defaultextension=".json",
+                filetypes=[
+                    ("JSON files", "*.json"),
+                    ("CSV files", "*.csv"),
+                    ("Text files", "*.txt"),
+                    ("All files", "*.*")
+                ],
+                initialdir=os.getcwd()
+            )
+            
+            if not file_path:
+                return  # User cancelled
+                
+            # Get file extension to determine format
+            _, ext = os.path.splitext(file_path.lower())
+            
+            if ext == '.csv':
+                # Export as CSV
+                import csv
+                with open(file_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    # Write header
+                    writer.writerow(['Timestamp', 'Source IP', 'Destination IP', 'Port', 'Protocol', 'Severity', 'Description'])
+                    # Write alert data
+                    for alert in self.alerts:
+                        writer.writerow([
+                            alert.get('timestamp', ''),
+                            alert.get('src_ip', ''),
+                            alert.get('dst_ip', ''),
+                            alert.get('port', ''),
+                            alert.get('protocol', ''),
+                            alert.get('severity', ''),
+                            alert.get('description', '')
+                        ])
+            elif ext == '.txt':
+                # Export as plain text
+                with open(file_path, 'w') as f:
+                    for alert in self.alerts:
+                        f.write(f"Timestamp: {alert.get('timestamp', 'N/A')}\n")
+                        f.write(f"Source: {alert.get('src_ip', 'N/A')} -> Destination: {alert.get('dst_ip', 'N/A')}:{alert.get('port', 'N/A')}\n")
+                        f.write(f"Protocol: {alert.get('protocol', 'N/A')}, Severity: {alert.get('severity', 'N/A')}\n")
+                        f.write(f"Description: {alert.get('description', '')}\n")
+                        f.write("-" * 80 + "\n\n")
+            else:
+                # Default to JSON
+                with open(file_path, 'w') as f:
+                    json.dump(self.alerts, f, indent=4, default=str)
+            
+            # Update status
+            self.status_var.set(f"Exported {len(self.alerts)} alerts to {os.path.basename(file_path)}")
+            logger.info(f"Exported {len(self.alerts)} alerts to {file_path}")
+            
+        except Exception as e:
+            error_msg = f"Error exporting alerts: {e}"
+            messagebox.showerror("Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+            
+    def refresh_data(self):
+        """Refresh data displayed in the UI."""
+        try:
+            logger.info("Refreshing UI data...")
+            
+            # Update status bar
+            if hasattr(self, 'status_var'):
+                self.status_var.set("Refreshing data...")
+                
+            # Update rules tree
+            if hasattr(self, 'rules_tree'):
+                self.update_rules_tree()
+                
+            # Update alerts list
+            if hasattr(self, 'alerts_tree'):
+                self.update_alerts_tree()
+                
+            # Update statistics
+            if hasattr(self, 'update_statistics'):
+                self.update_statistics()
+                
+            # Update status bar
+            if hasattr(self, 'status_var'):
+                self.status_var.set("Data refreshed")
+                
+            logger.info("UI data refresh complete")
+            
+        except Exception as e:
+            error_msg = f"Error refreshing data: {e}"
+            if hasattr(self, 'status_var'):
+                self.status_var.set("Error refreshing data")
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+            
+    def show_about(self):
+        """Show the About dialog."""
+        try:
+            logger.info("Showing About dialog...")
+            
+            # Create the about dialog
+            about_dialog = tk.Toplevel(self.root)
+            about_dialog.title("About NIPS")
+            about_dialog.transient(self.root)
+            about_dialog.grab_set()
+            about_dialog.geometry("500x400")
+            
+            # Create main frame
+            main_frame = ttk.Frame(about_dialog, padding=20)
+            main_frame.pack(fill='both', expand=True)
+            
+            # Add application icon/title
+            ttk.Label(main_frame, 
+                     text="NIPS", 
+                     font=('Arial', 24, 'bold'))\
+                .pack(pady=(0, 10))
+                
+            ttk.Label(main_frame, 
+                     text="Network Intrusion Prevention System",
+                     font=('Arial', 12))\
+                .pack(pady=(0, 20))
+            
+            # Add version info
+            version_frame = ttk.LabelFrame(main_frame, text="Version Information", padding=10)
+            version_frame.pack(fill='x', pady=(0, 20))
+            
+            ttk.Label(version_frame, 
+                     text="Version: 1.0.0",
+                     font=('Arial', 10))\
+                .pack(anchor='w')
+                
+            ttk.Label(version_frame, 
+                     text="Build Date: 2023-08-28",
+                     font=('Arial', 10))\
+                .pack(anchor='w')
+            
+            # Add copyright info
+            ttk.Label(main_frame, 
+                     text="© 2023 Security Ops Center",
+                     font=('Arial', 9, 'italic'))\
+                .pack(side='bottom', pady=(20, 0))
+                
+            # Add credits
+            credits_frame = ttk.LabelFrame(main_frame, text="Credits", padding=10)
+            credits_frame.pack(fill='both', expand=True, pady=(0, 20))
+            
+            credits_text = """Developed by: Security Ops Center Team
+
+This software is part of the Security Ops Center platform.
+
+Dependencies:
+- Python 3.8+
+- Scapy for packet analysis
+- psutil for system monitoring
+- Requests for API communication
+
+Licensed under the Apache License 2.0"""
+            
+            ttk.Label(credits_frame, 
+                     text=credits_text,
+                     justify='left')\
+                .pack(anchor='w')
+            
+            # Add close button
+            ttk.Button(main_frame, 
+                      text="Close", 
+                      command=about_dialog.destroy)\
+                .pack(side='bottom', pady=(10, 0))
+            
+            # Make the dialog modal
+            about_dialog.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error showing about dialog: {e}"
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+    
+    def check_updates(self):
+        """Check for available updates."""
+        try:
+            logger.info("Checking for updates...")
+            
+            # In a real application, this would check a server for updates
+            # For now, we'll simulate checking for updates
+            import random
+            has_update = random.choice([True, False])
+            
+            # Create a dialog to show update status
+            update_dialog = tk.Toplevel(self.root)
+            update_dialog.title("Check for Updates")
+            update_dialog.transient(self.root)
+            update_dialog.grab_set()
+            update_dialog.geometry("500x300")
+            
+            # Create main frame
+            main_frame = ttk.Frame(update_dialog, padding=20)
+            main_frame.pack(fill='both', expand=True)
+            
+            # Add title
+            ttk.Label(main_frame, 
+                     text="Check for Updates", 
+                     font=('Arial', 14, 'bold'))\
+                .pack(pady=(0, 20))
+            
+            if has_update:
+                # Update available
+                ttk.Label(main_frame, 
+                         text="A new version is available!",
+                         font=('Arial', 12, 'bold'),
+                         foreground='green').pack(pady=10)
+                
+                ttk.Label(main_frame, 
+                         text="Version 2.0.0 is now available.\n\n"
+                              "What's new in this version:\n"
+                              "• New traffic monitoring features\n"
+                              "• Improved detection algorithms\n"
+                              "• Bug fixes and performance improvements",
+                         justify='left').pack(pady=10, fill='x')
+                
+                # Add update button
+                btn_frame = ttk.Frame(main_frame)
+                btn_frame.pack(pady=20)
+                
+                ttk.Button(btn_frame, 
+                          text="Download Update", 
+                          command=lambda: webbrowser.open("https://security.ops.center/download"))\
+                    .pack(side='left', padx=5)
+                    
+                ttk.Button(btn_frame, 
+                          text="Release Notes", 
+                          command=lambda: webbrowser.open("https://security.ops.center/release-notes"))\
+                    .pack(side='left', padx=5)
+                
+            else:
+                # No updates available
+                ttk.Label(main_frame, 
+                         text="You're up to date!",
+                         font=('Arial', 12, 'bold'),
+                         foreground='green').pack(pady=20)
+                
+                ttk.Label(main_frame, 
+                         text=f"You have the latest version of NIPS (v1.0.0).\n\n"
+                              "Last checked: {}".format(
+                                  datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+                         justify='center').pack(pady=10)
+                
+                # Add close button
+                ttk.Button(main_frame, 
+                          text="Close", 
+                          command=update_dialog.destroy)\
+                    .pack(pady=10)
+            
+            # Add a check for beta updates option
+            check_beta = tk.BooleanVar()
+            ttk.Checkbutton(main_frame, 
+                          text="Include beta/pre-release versions",
+                          variable=check_beta).pack(pady=10)
+            
+            # Make the dialog modal
+            update_dialog.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error checking for updates: {e}"
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+    
+    def show_documentation(self):
+        """Show the documentation in a web browser."""
+        try:
+            logger.info("Opening documentation...")
+            
+            # In a real application, this would open the actual documentation
+            # For now, we'll show a message with a link
+            doc_url = "https://docs.security.ops.center/nips"
+            
+            # Create a dialog to show the documentation link
+            doc_dialog = tk.Toplevel(self.root)
+            doc_dialog.title("Documentation")
+            doc_dialog.transient(self.root)
+            doc_dialog.grab_set()
+            doc_dialog.geometry("600x400")
+            
+            # Create main frame
+            main_frame = ttk.Frame(doc_dialog, padding=20)
+            main_frame.pack(fill='both', expand=True)
+            
+            # Add title
+            ttk.Label(main_frame, 
+                     text="NIPS Documentation", 
+                     font=('Arial', 14, 'bold'))\
+                .pack(pady=(0, 20))
+            
+            # Add description
+            doc_text = """Welcome to the NIPS (Network Intrusion Prevention System) documentation.
+            
+For detailed information about using the NIPS, please visit our online documentation:
+            
+{url}
+            
+The documentation includes:
+- Getting Started Guide
+- User Manual
+- Configuration Reference
+- Troubleshooting
+- API Documentation
+
+If you need further assistance, please contact support@security.ops.center""".format(url=doc_url)
+            
+            # Add text widget with scrollbar
+            text_frame = ttk.Frame(main_frame)
+            text_frame.pack(fill='both', expand=True)
+            
+            text = tk.Text(text_frame, wrap='word', padx=10, pady=10, font=('Arial', 10))
+            text.insert('1.0', doc_text)
+            text.config(state='disabled')
+            
+            # Make the URL clickable
+            text.tag_configure('url', foreground='blue', underline=1)
+            text.tag_bind('url', '<Button-1>', lambda e: webbrowser.open(doc_url))
+            text.tag_bind('url', '<Enter>', lambda e: text.config(cursor='hand2'))
+            text.tag_bind('url', '<Leave>', lambda e: text.config(cursor=''))
+            
+            # Find and tag the URL
+            start = doc_text.find(doc_url)
+            if start >= 0:
+                end = start + len(doc_url)
+                text.tag_add('url', f'1.0+{start}c', f'1.0+{end}c')
+            
+            # Add scrollbar
+            scrollbar = ttk.Scrollbar(text_frame, command=text.yview)
+            text.configure(yscrollcommand=scrollbar.set)
+            
+            # Grid layout
+            text.pack(side='left', fill='both', expand=True)
+            scrollbar.pack(side='right', fill='y')
+            
+            # Add close button
+            btn_frame = ttk.Frame(main_frame)
+            btn_frame.pack(fill='x', pady=(20, 0))
+            
+            ttk.Button(btn_frame, 
+                      text="Open in Browser", 
+                      command=lambda: webbrowser.open(doc_url))\
+                .pack(side='left', padx=5)
+                
+            ttk.Button(btn_frame, 
+                      text="Close", 
+                      command=doc_dialog.destroy)\
+                .pack(side='right', padx=5)
+            
+            # Make the dialog modal
+            doc_dialog.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error showing documentation: {e}"
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+    
+    def open_traffic_monitor(self):
+        """Open the traffic monitor tool."""
+        try:
+            logger.info("Opening traffic monitor...")
+            
+            # Create a new window for the traffic monitor
+            monitor = tk.Toplevel(self.root)
+            monitor.title("Traffic Monitor")
+            monitor.transient(self.root)
+            monitor.grab_set()
+            monitor.geometry("1000x700")
+            
+            # Create main frame
+            main_frame = ttk.Frame(monitor, padding=10)
+            main_frame.pack(fill='both', expand=True)
+            
+            # Add a simple message for now
+            ttk.Label(main_frame, text="Traffic Monitor", font=('Arial', 12, 'bold')).pack(pady=10)
+            ttk.Label(main_frame, text="This is a placeholder for the traffic monitoring functionality.").pack(pady=5)
+            ttk.Label(main_frame, text="In a full implementation, this would show real-time network traffic,").pack(pady=2)
+            ttk.Label(main_frame, text="bandwidth usage, and connection statistics.").pack(pady=2)
+            
+            # Add a close button
+            ttk.Button(main_frame, text="Close", command=monitor.destroy).pack(pady=20)
+            
+            # Make the dialog modal
+            monitor.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error opening traffic monitor: {e}"
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+    
+    def open_network_scanner(self):
+        """Open the network scanner tool."""
+        try:
+            logger.info("Opening network scanner...")
+            
+            # Create a new window for the network scanner
+            scanner = tk.Toplevel(self.root)
+            scanner.title("Network Scanner")
+            scanner.transient(self.root)
+            scanner.grab_set()
+            scanner.geometry("800x600")
+            
+            # Create main frame
+            main_frame = ttk.Frame(scanner, padding=10)
+            main_frame.pack(fill='both', expand=True)
+            
+            # Add a simple message for now
+            ttk.Label(main_frame, text="Network Scanner Tool", font=('Arial', 12, 'bold')).pack(pady=10)
+            ttk.Label(main_frame, text="This is a placeholder for the network scanner functionality.").pack(pady=5)
+            ttk.Label(main_frame, text="In a full implementation, this would allow scanning networks for hosts,").pack(pady=2)
+            ttk.Label(main_frame, text="open ports, and services.").pack(pady=2)
+            
+            # Add a close button
+            ttk.Button(main_frame, text="Close", command=scanner.destroy).pack(pady=20)
+            
+            # Make the dialog modal
+            scanner.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error opening network scanner: {e}"
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+    
+    def open_packet_analyzer(self):
+        """Open the packet analyzer tool."""
+        try:
+            logger.info("Opening packet analyzer...")
+            
+            # Create a new window for the packet analyzer
+            analyzer = tk.Toplevel(self.root)
+            analyzer.title("Packet Analyzer")
+            analyzer.transient(self.root)
+            analyzer.grab_set()
+            
+            # Set window size and position
+            analyzer.geometry("800x600")
+            
+            # Create main frame
+            main_frame = ttk.Frame(analyzer, padding=10)
+            main_frame.pack(fill='both', expand=True)
+            
+            # Create filter frame
+            filter_frame = ttk.LabelFrame(main_frame, text="Filters", padding=5)
+            filter_frame.pack(fill='x', pady=(0, 10))
+            
+            # Protocol filter
+            ttk.Label(filter_frame, text="Protocol:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+            protocol_var = tk.StringVar()
+            protocol_combo = ttk.Combobox(filter_frame, textvariable=protocol_var, 
+                                        values=["All", "TCP", "UDP", "ICMP", "HTTP", "HTTPS", "DNS"],
+                                        state='readonly', width=10)
+            protocol_combo.set("All")
+            protocol_combo.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+            
+            # Source IP filter
+            ttk.Label(filter_frame, text="Source IP:").grid(row=0, column=2, padx=5, pady=5, sticky='w')
+            src_ip_entry = ttk.Entry(filter_frame, width=15)
+            src_ip_entry.grid(row=0, column=3, padx=5, pady=5, sticky='w')
+            
+            # Destination IP filter
+            ttk.Label(filter_frame, text="Dest IP:").grid(row=0, column=4, padx=5, pady=5, sticky='w')
+            dst_ip_entry = ttk.Entry(filter_frame, width=15)
+            dst_ip_entry.grid(row=0, column=5, padx=5, pady=5, sticky='w')
+            
+            # Port filter
+            ttk.Label(filter_frame, text="Port:").grid(row=0, column=6, padx=5, pady=5, sticky='w')
+            port_entry = ttk.Entry(filter_frame, width=8)
+            port_entry.grid(row=0, column=7, padx=5, pady=5, sticky='w')
+            
+            # Apply filter button
+            def apply_filters():
+                # This would apply the filters to the packet capture
+                logger.info("Applying packet filters...")
+                # Implementation would go here
+                
+            apply_btn = ttk.Button(filter_frame, text="Apply Filters", command=apply_filters)
+            apply_btn.grid(row=0, column=8, padx=5, pady=5, sticky='e')
+            
+            # Create packet list frame
+            list_frame = ttk.Frame(main_frame)
+            list_frame.pack(fill='both', expand=True)
+            
+            # Create treeview for packets
+            columns = ("#", "Time", "Source", "Destination", "Protocol", "Length", "Info")
+            tree = ttk.Treeview(list_frame, columns=columns, show='headings', selectmode='browse')
+            
+            # Configure columns
+            for col in columns:
+                tree.heading(col, text=col, command=lambda c=col: sort_treeview(tree, c, False))
+                tree.column(col, width=100, minwidth=50, anchor='w')
+            
+            # Adjust specific column widths
+            tree.column("#", width=40)
+            tree.column("Time", width=120)
+            tree.column("Length", width=70)
+            
+            # Add scrollbars
+            vsb = ttk.Scrollbar(list_frame, orient="vertical", command=tree.yview)
+            hsb = ttk.Scrollbar(list_frame, orient="horizontal", command=tree.xview)
+            tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+            
+            # Grid layout
+            tree.grid(row=0, column=0, sticky='nsew')
+            vsb.grid(row=0, column=1, sticky='ns')
+            hsb.grid(row=1, column=0, sticky='ew')
+            
+            # Configure grid weights
+            list_frame.grid_rowconfigure(0, weight=1)
+            list_frame.grid_columnconfigure(0, weight=1)
+            
+            # Create details frame
+            details_frame = ttk.LabelFrame(main_frame, text="Packet Details", padding=5)
+            details_frame.pack(fill='x', pady=(10, 0))
+            
+            # Add text widget for packet details
+            details_text = scrolledtext.ScrolledText(details_frame, wrap=tk.WORD, height=10)
+            details_text.pack(fill='both', expand=True, pady=5)
+            
+            # Add some sample packet data (in a real app, this would come from packet capture)
+            sample_packets = [
+                (1, "2023-01-01 12:00:01", "192.168.1.1:1234", "192.168.1.100:80", "TCP", "60", "SYN"),
+                (2, "2023-01-01 12:00:02", "192.168.1.100:80", "192.168.1.1:1234", "TCP", "60", "SYN-ACK"),
+                (3, "2023-01-01 12:00:03", "192.168.1.1:1234", "192.168.1.100:80", "TCP", "100", "ACK GET /")
+            ]
+            
+            for packet in sample_packets:
+                tree.insert('', 'end', values=packet)
+            
+            # Add button frame
+            btn_frame = ttk.Frame(main_frame)
+            btn_frame.pack(fill='x', pady=(10, 0))
+            
+            # Add buttons
+            start_btn = ttk.Button(btn_frame, text="Start Capture", command=lambda: None)  # Would start capture
+            start_btn.pack(side='left', padx=5)
+            
+            stop_btn = ttk.Button(btn_frame, text="Stop Capture", state='disabled', command=lambda: None)  # Would stop capture
+            stop_btn.pack(side='left', padx=5)
+            
+            clear_btn = ttk.Button(btn_frame, text="Clear", command=lambda: tree.delete(*tree.get_children()))
+            clear_btn.pack(side='right', padx=5)
+            
+            # Bind double-click to show packet details
+            def on_item_double_click(event):
+                item = tree.identify('item', event.x, event.y)
+                if item:
+                    values = tree.item(item, 'values')
+                    if values:
+                        details_text.delete(1.0, tk.END)
+                        details_text.insert(tk.END, f"Packet #{values[0]} Details\n")
+                        details_text.insert(tk.END, "-" * 50 + "\n")
+                        details_text.insert(tk.END, f"Time: {values[1]}\n")
+                        details_text.insert(tk.END, f"Source: {values[2]}\n")
+                        details_text.insert(tk.END, f"Destination: {values[3]}\n")
+                        details_text.insert(tk.END, f"Protocol: {values[4]}\n")
+                        details_text.insert(tk.END, f"Length: {values[5]} bytes\n")
+                        details_text.insert(tk.END, f"Info: {values[6]}\n")
+            
+            tree.bind('<Double-1>', on_item_double_click)
+            
+            # Make the dialog modal
+            analyzer.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error opening packet analyzer: {e}"
+            logger.error(error_msg, exc_info=True)
+            messagebox.showerror("Error", error_msg)
+    
+    def show_preferences(self):
+        """Show the preferences dialog."""
+        try:
+            # Create the preferences dialog
+            prefs_dialog = tk.Toplevel(self.root)
+            prefs_dialog.title("Preferences")
+            prefs_dialog.transient(self.root)
+            prefs_dialog.grab_set()
+            
+            # Set dialog size and position
+            dialog_width = 500
+            dialog_height = 400
+            screen_width = prefs_dialog.winfo_screenwidth()
+            screen_height = prefs_dialog.winfo_screenheight()
+            x = (screen_width // 2) - (dialog_width // 2)
+            y = (screen_height // 2) - (dialog_height // 2)
+            prefs_dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+            
+            # Create notebook for preference categories
+            notebook = ttk.Notebook(prefs_dialog)
+            notebook.pack(fill='both', expand=True, padx=10, pady=10)
+            
+            # General tab
+            general_frame = ttk.Frame(notebook, padding=10)
+            notebook.add(general_frame, text="General")
+            
+            # Logging level
+            ttk.Label(general_frame, text="Logging Level:").grid(row=0, column=0, sticky='w', pady=5)
+            log_level = ttk.Combobox(general_frame, values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+            log_level.set(logging.getLevelName(logger.getEffectiveLevel()))
+            log_level.grid(row=0, column=1, sticky='ew', pady=5, padx=5)
+            
+            # Auto-save interval (minutes)
+            ttk.Label(general_frame, text="Auto-save Interval (minutes):").grid(row=1, column=0, sticky='w', pady=5)
+            auto_save = ttk.Spinbox(general_frame, from_=1, to=60, width=5)
+            auto_save.set(getattr(self, 'auto_save_interval', 5))
+            auto_save.grid(row=1, column=1, sticky='w', pady=5, padx=5)
+            
+            # Network tab
+            network_frame = ttk.Frame(notebook, padding=10)
+            notebook.add(network_frame, text="Network")
+            
+            # Network interface
+            ttk.Label(network_frame, text="Network Interface:").grid(row=0, column=0, sticky='w', pady=5)
+            iface = ttk.Combobox(network_frame)
+            try:
+                import netifaces
+                interfaces = netifaces.interfaces()
+                iface['values'] = interfaces
+                if hasattr(self, 'network_interface') and self.network_interface in interfaces:
+                    iface.set(self.network_interface)
+                elif interfaces:
+                    iface.set(interfaces[0])
+            except ImportError:
+                iface.insert(0, "netifaces module not installed")
+                iface.config(state='disabled')
+            iface.grid(row=0, column=1, sticky='ew', pady=5, padx=5)
+            
+            # Packet capture filter
+            ttk.Label(network_frame, text="Packet Filter:").grid(row=1, column=0, sticky='w', pady=5)
+            packet_filter = ttk.Entry(network_frame)
+            packet_filter.insert(0, getattr(self, 'packet_filter', 'tcp or udp or icmp'))
+            packet_filter.grid(row=1, column=1, sticky='ew', pady=5, padx=5)
+            
+            # Buttons
+            button_frame = ttk.Frame(prefs_dialog)
+            button_frame.pack(fill='x', padx=10, pady=10)
+            
+            def apply_changes():
+                try:
+                    # Apply general settings
+                    logger.setLevel(log_level.get())
+                    self.auto_save_interval = int(auto_save.get())
+                    
+                    # Apply network settings
+                    if iface.get() and iface['state'] != 'disabled':
+                        self.network_interface = iface.get()
+                    self.packet_filter = packet_filter.get()
+                    
+                    # Save preferences
+                    self.save_preferences()
+                    
+                    # Update status
+                    self.status_var.set("Preferences saved")
+                    logger.info("Preferences saved")
+                    
+                    # Close dialog
+                    prefs_dialog.destroy()
+                    
+                except Exception as e:
+                    error_msg = f"Error applying preferences: {e}"
+                    messagebox.showerror("Error", error_msg)
+                    logger.error(error_msg, exc_info=True)
+            
+            ttk.Button(button_frame, text="OK", command=apply_changes).pack(side='right', padx=5)
+            ttk.Button(button_frame, text="Cancel", command=prefs_dialog.destroy).pack(side='right', padx=5)
+            ttk.Button(button_frame, text="Apply", command=apply_changes).pack(side='right', padx=5)
+            
+            # Make the dialog modal
+            prefs_dialog.wait_window()
+            
+        except Exception as e:
+            error_msg = f"Error showing preferences: {e}"
+            messagebox.showerror("Error", error_msg)
+            logger.error(error_msg, exc_info=True)
+    
+    def save_preferences(self):
+        """Save preferences to a file."""
+        try:
+            prefs = {
+                'log_level': logging.getLevelName(logger.getEffectiveLevel()),
+                'auto_save_interval': getattr(self, 'auto_save_interval', 5),
+                'network_interface': getattr(self, 'network_interface', ''),
+                'packet_filter': getattr(self, 'packet_filter', 'tcp or udp or icmp'),
+                'window_geometry': self.root.geometry()
+            }
+            
+            # Ensure the config directory exists
+            config_dir = os.path.join(os.path.expanduser('~'), '.nips')
+            os.makedirs(config_dir, exist_ok=True)
+            
+            # Save to file
+            config_file = os.path.join(config_dir, 'preferences.json')
+            with open(config_file, 'w') as f:
+                json.dump(prefs, f, indent=4)
+                
+            logger.debug(f"Preferences saved to {config_file}")
+            
+        except Exception as e:
+            logger.error(f"Error saving preferences: {e}", exc_info=True)
+            raise
     
     def stop_monitoring(self):
         """Stop monitoring network traffic."""
@@ -798,6 +1948,238 @@ class NIPSGUI:
             logger.info(f"Loaded {len(feeds)} threat feeds")
         except Exception as e:
             logger.error(f"Error loading threat feeds: {e}")
+            
+    def update_threat_feeds(self):
+        """Update all enabled threat feeds."""
+        if not hasattr(self, 'threat_feed'):
+            messagebox.showerror("Error", "Threat feed manager not initialized")
+            return
+            
+        try:
+            # Clear existing feeds
+            for item in self.feeds_tree.get_children():
+                self.feeds_tree.delete(item)
+                
+            # Simulate updating feeds (in a real app, this would call threat_feed.update_feeds())
+            updated_feeds = [
+                ("AbuseIPDB", "https://api.abuseipdb.com/api/v2/blacklist", "IP", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 1300, True),
+                ("AlienVault OTX", "https://otx.alienvault.com/api/v1/indicators/export", "IP/Domain", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 900, True),
+                ("FireHOL", "https://iplists.firehol.org/files/firehol_level1.netset", "IP", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 5200, True),
+                ("Malware Domain List", "https://www.malwaredomainlist.com/hostslist/ip.txt", "Domain", "2023-01-01 10:15:00", 320, False),
+            ]
+            
+            for feed in updated_feeds:
+                self.feeds_tree.insert("", tk.END, values=feed)
+                
+            messagebox.showinfo("Success", "Successfully updated threat feeds")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to update threat feeds: {str(e)}")
+            
+    def view_iocs(self):
+        """View IOCs from the selected threat feed."""
+        selected = self.feeds_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a threat feed first")
+            return
+            
+        # Get the selected feed details
+        item = self.feeds_tree.item(selected[0])
+        feed_name = item['values'][0]
+        feed_url = item['values'][1]
+        feed_type = item['values'][2]
+        
+        # Create a dialog to display IOCs
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"IOCs - {feed_name}")
+        dialog.geometry("800x600")
+        
+        # Add a frame for the toolbar
+        toolbar = ttk.Frame(dialog)
+        toolbar.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Add search functionality
+        ttk.Label(toolbar, text="Search:").pack(side=tk.LEFT, padx=5)
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(toolbar, textvariable=search_var, width=30)
+        search_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Add a treeview to display IOCs
+        columns = ("Value", "Type", "First Seen", "Last Seen", "Source")
+        tree = ttk.Treeview(dialog, columns=columns, show="headings", selectmode="browse")
+        
+        # Configure columns
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=150, anchor=tk.W)
+        
+        # Add scrollbars
+        vsb = ttk.Scrollbar(dialog, orient="vertical", command=tree.yview)
+        hsb = ttk.Scrollbar(dialog, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        # Pack the tree and scrollbars
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Add a status bar
+        status = ttk.Label(dialog, text=f"Showing IOCs from {feed_name}", relief=tk.SUNKEN, anchor=tk.W)
+        status.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        def search_iocs():
+            """Filter IOCs based on search term."""
+            search_term = search_var.get().lower()
+            for item in tree.get_children():
+                values = [v.lower() for v in tree.item(item)['values']]
+                if any(search_term in str(v) for v in values):
+                    tree.attach(item, '', 0)  # Move to top if matches
+                
+        search_entry.bind('<Return>', lambda e: search_iocs())
+        ttk.Button(toolbar, text="Search", command=search_iocs).pack(side=tk.LEFT, padx=5)
+        
+        # Simulate loading IOCs (in a real app, this would come from the feed manager)
+        def load_iocs():
+            """Load IOCs into the treeview."""
+            try:
+                # Simulate loading delay
+                dialog.config(cursor="watch")
+                dialog.update()
+                
+                # Clear existing items
+                for item in tree.get_children():
+                    tree.delete(item)
+                
+                # Simulate sample IOCs based on feed type
+                now = datetime.now()
+                sample_iocs = []
+                
+                if "IP" in feed_type:
+                    sample_iocs = [
+                        ("192.168.1.1", "IPv4", "2023-01-01 10:00:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                        ("10.0.0.5", "IPv4", "2023-01-02 14:30:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                        ("2001:db8::1", "IPv6", "2023-01-03 09:15:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                    ]
+                elif "Domain" in feed_type:
+                    sample_iocs = [
+                        ("example.com", "Domain", "2023-01-01 10:00:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                        ("malware.example.org", "Domain", "2023-01-02 14:30:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                        ("suspicious-site.net", "Domain", "2023-01-03 09:15:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                    ]
+                else:
+                    sample_iocs = [
+                        ("https://example.com/malware.exe", "URL", "2023-01-01 10:00:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                        ("a1b2c3d4e5f6...", "File Hash", "2023-01-02 14:30:00", now.strftime("%Y-%m-%d %H:%M:%S"), feed_name),
+                    ]
+                
+                # Add IOCs to the treeview
+                for ioc in sample_iocs:
+                    tree.insert("", tk.END, values=ioc)
+                
+                status.config(text=f"Showing {len(sample_iocs)} IOCs from {feed_name}")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load IOCs: {str(e)}")
+            finally:
+                dialog.config(cursor="")
+        
+        # Load IOCs in a separate thread to keep the UI responsive
+        threading.Thread(target=load_iocs, daemon=True).start()
+    
+    def add_threat_feed(self):
+        """Open a dialog to add a new threat feed."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Add New Threat Feed")
+        dialog.geometry("500x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Form fields
+        ttk.Label(dialog, text="Feed Name:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        name_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=name_var, width=50).grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        ttk.Label(dialog, text="Feed URL:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        url_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=url_var, width=50).grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        ttk.Label(dialog, text="Feed Type:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        type_var = tk.StringVar(value="IP")
+        ttk.Combobox(dialog, textvariable=type_var, values=["IP", "Domain", "URL", "Hash"], state="readonly").grid(
+            row=2, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        ttk.Label(dialog, text="API Key (if required):").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
+        api_key_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=api_key_var, width=50, show="*").grid(row=3, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        enabled_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(dialog, text="Enable feed", variable=enabled_var).grid(row=4, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        def save_feed():
+            """Save the new feed and update the UI."""
+            name = name_var.get().strip()
+            url = url_var.get().strip()
+            feed_type = type_var.get()
+            api_key = api_key_var.get().strip()
+            
+            if not name or not url:
+                messagebox.showerror("Error", "Name and URL are required fields")
+                return
+                
+            try:
+                # In a real app, this would save to a config file or database
+                # For now, just add to the treeview
+                self.feeds_tree.insert(
+                    "", 
+                    tk.END, 
+                    values=(
+                        name,
+                        url,
+                        feed_type,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        0,  # Initial IOC count
+                        enabled_var.get()
+                    )
+                )
+                messagebox.showinfo("Success", f"Added feed: {name}")
+                dialog.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to add feed: {str(e)}")
+        
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.grid(row=5, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Save", command=save_feed).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
+    def load_sample_feeds(self):
+        """Load sample threat feeds for demonstration."""
+        if not hasattr(self, 'feeds_tree'):
+            return
+            
+        try:
+            # Clear existing feeds
+            for item in self.feeds_tree.get_children():
+                self.feeds_tree.delete(item)
+                
+            # Sample threat feeds
+            sample_feeds = [
+                ("AbuseIPDB", "https://api.abuseipdb.com/api/v2/blacklist", "IP", "2023-01-01 12:00:00", 1250, True),
+                ("AlienVault OTX", "https://otx.alienvault.com/api/v1/indicators/export", "IP/Domain", "2023-01-01 12:05:00", 850, True),
+                ("FireHOL", "https://iplists.firehol.org/files/firehol_level1.netset", "IP", "2023-01-01 11:30:00", 5000, True),
+                ("Malware Domain List", "https://www.malwaredomainlist.com/hostslist/ip.txt", "Domain", "2023-01-01 10:15:00", 320, False),
+            ]
+            
+            for feed in sample_feeds:
+                self.feeds_tree.insert("", tk.END, values=feed)
+                
+            logger.info(f"Loaded {len(sample_feeds)} sample threat feeds")
+            
+        except Exception as e:
+            logger.error(f"Error loading sample feeds: {e}")
+            messagebox.showerror("Error", f"Failed to load sample feeds: {str(e)}")
     
     def load_sample_rules(self):
         """Load sample rules for demonstration."""
@@ -993,10 +2375,38 @@ class NIPSGUI:
 
 def main():
     """Main entry point for the NIPS GUI application."""
-    # Create and run the application
-    root = tk.Tk()
-    app = NIPSGUI(root)
-    root.mainloop()
+    try:
+        # Set up logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler('nips_gui.log')
+            ]
+        )
+        logger = logging.getLogger('nips.gui')
+        
+        logger.info("Starting NIPS GUI application")
+        
+        # Create the main window
+        root = tk.Tk()
+        logger.debug("Main window created")
+        
+        # Create the application
+        app = NIPSGUI(root)
+        logger.debug("NIPSGUI instance created")
+        
+        # Start the main event loop
+        logger.info("Starting main event loop")
+        root.mainloop()
+        
+    except Exception as e:
+        logger.error(f"Fatal error in NIPS GUI: {e}", exc_info=True)
+        messagebox.showerror("Fatal Error", 
+            f"A fatal error occurred: {str(e)}\n\nCheck nips_gui.log for details.")
+    finally:
+        logger.info("NIPS GUI application terminated")
 
 if __name__ == "__main__":
     main()

@@ -366,7 +366,7 @@ class FileHashFeed(ThreatFeed):
 
 
 class ThreatFeedManager:
-    """Manages multiple threat intelligence feeds."
+    """Manages multiple threat intelligence feeds."""
     
     def __init__(self, config: Dict[str, Any]):
         """Initialize the threat feed manager.

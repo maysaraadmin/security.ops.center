@@ -103,7 +103,7 @@ class FIMEngine:
             monitor_critical_paths: Whether to automatically monitor platform-specific critical paths
             use_native_watchers: Whether to use native platform watchers (if False, falls back to polling)
         """
-        self.config = config or {}
+        self.config = config or {
             'hashing_algorithms': ['md5', 'sha1', 'sha256'],
             'max_file_size': 100 * 1024 * 1024,  # 100MB
             'exclude_dirs': ['$RECYCLE.BIN', 'System Volume Information', 'Windows', 'Program Files', 'Program Files (x86)'],
