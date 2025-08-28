@@ -15,13 +15,34 @@ import queue
 import sys
 from pathlib import Path
 
-# Import SIEM modules
-from siem.detection.engine import DetectionEngine
-from siem.response.engine import ResponseEngine
-from siem.analytics.historical_analyzer import HistoricalAnalyzer
-from siem.monitoring import MonitoringService
-from siem.collectors.manager import CollectorManager
-from siem.compliance.manager import ComplianceManager
+# Import SIEM modules with fallback for direct execution
+try:
+    # Try relative imports first (when run as part of the package)
+    from .detection.engine import DetectionEngine
+    from .response.engine import ResponseEngine
+    from .analytics.historical_analyzer import HistoricalAnalyzer
+    from .monitoring import MonitoringService
+    from .collectors.manager import CollectorManager
+    from .compliance.manager import ComplianceManager
+except (ImportError, SystemError):
+    # Fall back to absolute imports for direct execution
+    try:
+        from siem.detection.engine import DetectionEngine
+        from siem.response.engine import ResponseEngine
+        from siem.analytics.historical_analyzer import HistoricalAnalyzer
+        from siem.monitoring import MonitoringService
+        from siem.collectors.manager import CollectorManager
+        from siem.compliance.manager import ComplianceManager
+    except ImportError:
+        # If both relative and absolute imports fail, show a helpful error
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from siem.detection.engine import DetectionEngine
+        from siem.response.engine import ResponseEngine
+        from siem.analytics.historical_analyzer import HistoricalAnalyzer
+        from siem.monitoring import MonitoringService
+        from siem.collectors.manager import CollectorManager
+        from siem.compliance.manager import ComplianceManager
 
 # Configure logging
 logging.basicConfig(
@@ -472,26 +493,26 @@ class TextRedirector:
 def main():
     """Main entry point for the SIEM GUI application."""
     try:
-        # Create the main window
-        root = tk.Tk()
-        
-        # Set the application icon if available
-        try:
-            # Replace with your icon file if available
-            # root.iconbitmap("siem_icon.ico")
-            pass
-        except:
-            pass
+        # Set up logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('siem_gui.log'),
+                logging.StreamHandler()
+            ]
+        )
         
         # Create and run the application
-        app = SIEMApp(root)
+        root = tk.Tk()
+        app = SIEMGUI(root)
         root.mainloop()
         
-        return 0
     except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
-        messagebox.showerror("Fatal Error", f"The application encountered a fatal error:\n{str(e)}")
+        logging.critical(f"Fatal error: {e}", exc_info=True)
         return 1
+    
+    return 0
 
 
 if __name__ == "__main__":

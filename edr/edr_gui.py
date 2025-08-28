@@ -17,7 +17,7 @@ import json
 
 # Local imports from edr package
 from . import __version__
-from .core.detection import ThreatDetector
+from .core import ThreatDetector
 from .rule_manager import RuleManager
 from .threat_detection import ThreatDetectionEngine
 

@@ -2,6 +2,125 @@
 Advanced Threat Detection for EDR
 Implements fileless attack detection, LOTL techniques, and behavioral analysis.
 """
+from typing import Dict, Any, List, Optional, Callable, Set
+import logging
+from datetime import datetime
+
+class ThreatDetectionEngine:
+    """Advanced threat detection engine for EDR."""
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the threat detection engine.
+        
+        Args:
+            config: Configuration dictionary for the engine
+        """
+        self.config = config or {}
+        self.logger = logging.getLogger("edr.threat_detection")
+        self.detectors = []
+        self.rules = {}
+        self.running = False
+        self._setup()
+    
+    def _setup(self) -> None:
+        """Setup the detection engine with default configurations."""
+        self.logger.info("Initializing Threat Detection Engine")
+        # Initialize default detection rules
+        self._load_default_rules()
+    
+    def _load_default_rules(self) -> None:
+        """Load default detection rules."""
+        self.rules = {
+            'suspicious_processes': {
+                'enabled': True,
+                'processes': ['mimikatz.exe', 'procdump.exe', 'psexec.exe']
+            },
+            'suspicious_commands': {
+                'enabled': True,
+                'patterns': [
+                    r'powershell.*-nop.*-w\s+hidden',
+                    r'powershell.*-enc',
+                    r'Invoke-Expression',
+                    r'iex\s+\('
+                ]
+            }
+        }
+    
+    def add_detector(self, detector: Any) -> bool:
+        """Add a detector to the engine.
+        
+        Args:
+            detector: Detector instance to add
+            
+        Returns:
+            bool: True if added successfully
+        """
+        try:
+            self.detectors.append(detector)
+            self.logger.info(f"Added detector: {detector.__class__.__name__}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to add detector: {e}")
+            return False
+    
+    def start(self) -> None:
+        """Start the detection engine."""
+        if self.running:
+            self.logger.warning("Detection engine is already running")
+            return
+            
+        self.running = True
+        self.logger.info("Starting threat detection engine")
+        
+        # Start all detectors
+        for detector in self.detectors:
+            try:
+                if hasattr(detector, 'start'):
+                    detector.start()
+            except Exception as e:
+                self.logger.error(f"Error starting detector {detector.__class__.__name__}: {e}")
+    
+    def stop(self) -> None:
+        """Stop the detection engine."""
+        if not self.running:
+            return
+            
+        self.logger.info("Stopping threat detection engine")
+        self.running = False
+        
+        # Stop all detectors
+        for detector in self.detectors:
+            try:
+                if hasattr(detector, 'stop'):
+                    detector.stop()
+            except Exception as e:
+                self.logger.error(f"Error stopping detector {detector.__class__.__name__}: {e}")
+    
+    def analyze(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Analyze an event for potential threats.
+        
+        Args:
+            event: Event data to analyze
+            
+        Returns:
+            List of detected threats (empty if none found)
+        """
+        threats = []
+        
+        # Check against all rules
+        if self.rules['suspicious_processes']['enabled']:
+            process_name = event.get('process_name', '').lower()
+            for proc in self.rules['suspicious_processes']['processes']:
+                if proc.lower() in process_name:
+                    threats.append({
+                        'type': 'suspicious_process',
+                        'process': process_name,
+                        'rule': 'Suspicious process execution',
+                        'severity': 'high',
+                        'timestamp': datetime.utcnow().isoformat()
+                    })
+        
+        return threats
 
 import os
 import re

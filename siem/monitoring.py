@@ -7,8 +7,14 @@ This module implements the monitoring component of the SIEM system.
 import time
 import threading
 import psutil
+import logging
 from typing import Dict, Any
-from ..core.component import Component
+
+# Try absolute import first, fall back to relative if needed
+try:
+    from siem.core.component import Component
+except ImportError:
+    from .core.component import Component
 
 logger = logging.getLogger(__name__)
 

@@ -131,23 +131,36 @@ class EDRBase:
         self.config = config
         self.logger = self._setup_logging()
         
-    def _setup_logging(self) -> logging.Logger:
+    def _setup_logging(self):
         """Set up logging for the component."""
-        logger = logging.getLogger(self.__class__.__name__)
-        logger.setLevel(self.config.log_level.upper())
+        logger = logging.getLogger(f"edr.{self.__class__.__name__.lower()}")
+        
+        # Handle both dictionary and object-style config access
+        if hasattr(self.config, 'log_level'):
+            log_level = self.config.log_level.upper()
+        elif isinstance(self.config, dict) and 'log_level' in self.config:
+            log_level = self.config['log_level'].upper()
+        else:
+            log_level = 'INFO'  # Default log level
+            
+        logger.setLevel(log_level)
+        
+        # Create console handler
+        ch = logging.StreamHandler()
+        ch.setLevel(log_level)
         
         # Create formatter
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        
-        # Create console handler
-        ch = logging.StreamHandler()
         ch.setFormatter(formatter)
-        logger.addHandler(ch)
         
+        # Add handler to logger if not already added
+        if not logger.handlers:
+            logger.addHandler(ch)
+            
         # Create file handler if log file is specified
-        if self.config.log_file:
+        if hasattr(self.config, 'log_file'):
             log_path = Path(self.config.log_file)
             log_path.parent.mkdir(parents=True, exist_ok=True)
             fh = logging.FileHandler(log_path)

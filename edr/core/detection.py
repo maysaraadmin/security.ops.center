@@ -1,4 +1,4 @@
-""
+"""
 Threat detection engine and rules for the EDR system.
 """
 from dataclasses import dataclass, field
@@ -246,20 +246,54 @@ class DetectionEngine(EDRBase):
     
     def _load_rules(self):
         """Load detection rules from the configured directory."""
-        rules_dir = Path(self.config.detection_rules_path)
+        # Handle both dictionary and object-style config access
+        if hasattr(self.config, 'detection_rules_path'):
+            rules_path = self.config.detection_rules_path
+        elif isinstance(self.config, dict) and 'detection_rules_path' in self.config:
+            rules_path = self.config['detection_rules_path']
+        else:
+            # Default path if not specified
+            rules_path = os.path.join(os.path.dirname(__file__), '..', 'rules')
+            
+        rules_dir = Path(rules_path)
         if not rules_dir.exists():
             self.logger.warning(f"Rules directory not found: {rules_dir}")
+            # Create default rules directory
+            rules_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Created default rules directory at: {rules_dir}")
+            # Add a default rule
+            self._create_default_rule()
             return
             
         # Load YAML rules
-        for rule_file in rules_dir.glob('**/*.yaml'):
+        rule_files = list(rules_dir.glob('**/*.yaml')) + list(rules_dir.glob('**/*.json'))
+        
+        if not rule_files:
+            self.logger.warning(f"No rule files found in {rules_dir}")
+            # Add a default rule if no rules found
+            self._create_default_rule()
+            return
+            
+        for rule_file in rule_files:
             try:
                 with open(rule_file, 'r') as f:
-                    rule_data = yaml.safe_load(f)
-                    rule = self._create_rule(rule_data)
-                    if rule:
-                        self.rules[rule.rule_id] = rule
-                        self.logger.debug(f"Loaded rule: {rule.name} ({rule.rule_id})")
+                    if rule_file.suffix.lower() == '.yaml':
+                        rule_data = yaml.safe_load(f)
+                    else:  # .json
+                        rule_data = json.load(f)
+                    
+                    # Handle both single rule and list of rules
+                    if isinstance(rule_data, list):
+                        for rule_item in rule_data:
+                            rule = self._create_rule(rule_item)
+                            if rule:
+                                self.rules[rule.rule_id] = rule
+                                self.logger.debug(f"Loaded rule: {rule.name} ({rule.rule_id})")
+                    else:
+                        rule = self._create_rule(rule_data)
+                        if rule:
+                            self.rules[rule.rule_id] = rule
+                            self.logger.debug(f"Loaded rule: {rule.name} ({rule.rule_id})")
             except Exception as e:
                 self.logger.error(f"Error loading rule from {rule_file}: {e}")
         
@@ -306,6 +340,29 @@ class DetectionEngine(EDRBase):
             self.logger.error(f"Error creating rule: {e}")
             return None
     
+    def _create_default_rule(self) -> None:
+        """Create a default rule when no rules are found."""
+        default_rule = {
+            'rule_id': 'default_rule_1',
+            'name': 'Default Suspicious Process Detection',
+            'description': 'Detects common suspicious processes',
+            'detection_type': 'signature',
+            'severity': 'HIGH',
+            'enabled': True,
+            'signatures': [
+                {
+                    'process_name': ['mimikatz.exe', 'procdump.exe', 'psexec.exe', 'cobaltstrike.exe']
+                }
+            ]
+        }
+        try:
+            rule = self._create_rule(default_rule)
+            if rule:
+                self.rules[rule.rule_id] = rule
+                self.logger.info("Created default detection rule")
+        except Exception as e:
+            self.logger.error(f"Failed to create default rule: {e}")
+                
     def process_event(self, event: EDREvent) -> List[ThreatInfo]:
         """Process an event through all enabled rules."""
         threats = []

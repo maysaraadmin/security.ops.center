@@ -1,0 +1,33 @@
+- action: alert
+  condition:
+    parent_process:
+    - explorer.exe
+    - iexplore.exe
+    - chrome.exe
+    - firefox.exe
+    process_name:
+    - powershell.exe
+    - cmd.exe
+    - wscript.exe
+    - cscript.exe
+  description: Detects creation of suspicious processes
+  enabled: true
+  id: PROC-001
+  name: Suspicious Process Creation
+  severity: high
+  type: process
+- action: alert
+  condition:
+    process_name:
+    - powershell.exe
+    - cmd.exe
+    remote_port:
+    - '4444'
+    - '8080'
+    - '53'
+  description: Detects suspicious outbound network connections
+  enabled: true
+  id: NET-001
+  name: Suspicious Network Connection
+  severity: medium
+  type: network
