@@ -391,35 +391,51 @@ DEFAULT_CONFIG = {
 
 class EventManager(QObject):
     """Manages SIEM events and alerts with thread-safe operations."""
-    event_added = pyqtSignal(object)  # Signal when a new event is added
-    alert_triggered = pyqtSignal(object)  # Signal when a new alert is triggered
+    # Define signals with proper types
+    event_added = pyqtSignal('PyQt_PyObject')  # Signal when a new event is added
+    alert_triggered = pyqtSignal('PyQt_PyObject')  # Signal when a new alert is triggered
     
-    def __init__(self, max_events=MAX_EVENTS):
+    def __init__(self, max_events: int = MAX_EVENTS) -> None:
+        """Initialize the EventManager with the specified maximum number of events.
+        
+        Args:
+            max_events: Maximum number of events to keep in memory
+        """
         super().__init__()
         self.max_events = max_events
-        self.events = []
-        self.alerts = []
-        self.rules = []
+        self.events: List[Dict[str, Any]] = []
+        self.alerts: List[Dict[str, Any]] = []
+        self.rules: List[Dict[str, Any]] = []
 
 class SIEMMainWindow(QMainWindow):
-    def __init__(self):
+    """Main application window for the SIEM system.
+    
+    This class manages the main user interface and coordinates between different
+    components of the SIEM system.
+    """
+    
+    def __init__(self) -> None:
+        """Initialize the main window and its components."""
         super().__init__()
         self.setWindowTitle("Advanced Security Information and Event Management")
         self.setGeometry(100, 100, 1200, 800)  # Default size if not in config
         
         # Initialize database
-        self.db = get_database()
+        self.db: Database = get_database()
         
         # Initialize core components
-        self.config = self.load_config()
-        self.event_manager = EventManager()
+        self.config: Dict[str, Any] = self.load_config()
+        self.event_manager: EventManager = EventManager()
         
-        # Initialize data structures
-        self.events = []
-        self.alerts = []
+        # Initialize data structures with type hints
+        self.events: List[Dict[str, Any]] = []
+        self.alerts: List[Dict[str, Any]] = []
         
         # Initialize UI components
         self.setup_ui()
+        
+        # Initialize status bar
+        self.status_bar: QStatusBar = self.statusBar()
         
         # Load initial data
         self.load_initial_data()
@@ -431,6 +447,11 @@ class SIEMMainWindow(QMainWindow):
         
         # Show status message
         self.status_bar.showMessage("Ready")
+        
+        # Initialize timers
+        self.dashboard_timer: Optional[QTimer] = None
+        self.events_timer: Optional[QTimer] = None
+        self.alerts_timer: Optional[QTimer] = None
     
     def load_config(self) -> dict:
         """Load application configuration."""
