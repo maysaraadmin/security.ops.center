@@ -4,11 +4,25 @@ SIEM GUI - Security Information and Event Management (PyQt5 Version)
 A modern, modular GUI for the SIEM system with enhanced features and improved user experience.
 """
 
+# Suppress PyQt deprecation warnings
+import warnings
+from PyQt5.QtCore import pyqtRemoveInputHook
+warnings.filterwarnings("ignore", category=DeprecationWarning, module='PyQt5')
+# Suppress SIP deprecation warnings
+import sip
+try:
+    sip.setapi('QVariant', 2)
+    sip.setapi('QString', 2)
+except (AttributeError, ValueError):
+    # API was already set to v2
+    pass
+
 import json
 import logging
 import os
 import random
 import sys
+import subprocess
 import threading
 import time
 import uuid
@@ -36,7 +50,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QMessageBox, QDialog, QDialogButtonBox, QVBoxLayout, QLabel,
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
+    QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout,
     QTabWidget, QLineEdit, QComboBox, QMessageBox, QMenu, QAction,
     QDialog, QDialogButtonBox, QFormLayout, QTextEdit, QFrame,
     QGroupBox, QTextBrowser, QStatusBar, QToolBar, QToolButton,
@@ -391,7 +405,7 @@ class SIEMMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Advanced Security Information and Event Management")
-        self.setGeometry(100, 100, *DEFAULT_CONFIG['ui']['window_size'])
+        self.setGeometry(100, 100, 1200, 800)  # Default size if not in config
         
         # Initialize database
         self.db = get_database()
@@ -404,14 +418,19 @@ class SIEMMainWindow(QMainWindow):
         self.events = []
         self.alerts = []
         
+        # Initialize UI components
+        self.setup_ui()
+        
         # Load initial data
         self.load_initial_data()
         
-        # Initialize UI
-        self.setup_ui()
+        # Setup connections and timers
         self.setup_connections()
-        self.apply_theme(self.config['ui']['theme'])
+        self.apply_theme(self.config.get('ui', {}).get('theme', 'light'))
         self.setup_timers()
+        
+        # Show status message
+        self.status_bar.showMessage("Ready")
     
     def load_config(self) -> dict:
         """Load application configuration."""
@@ -439,99 +458,964 @@ class SIEMMainWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Error saving config: {e}")
             
+    def update_dashboard(self):
+        """Update the dashboard with current statistics."""
+        try:
+            # Get stats from database
+            event_count = len(self.events) if hasattr(self, 'events') else 0
+            alert_count = len(self.alerts) if hasattr(self, 'alerts') else 0
+            
+            # Update dashboard widgets if they exist
+            if hasattr(self, 'event_count_label'):
+                self.event_count_label.setText(f"{event_count}")
+            if hasattr(self, 'alert_count_label'):
+                self.alert_count_label.setText(f"{alert_count}")
+                
+        except Exception as e:
+            logging.error(f"Error updating dashboard: {e}")
+            
+    def setup_timers(self):
+        """Set up timers for periodic updates."""
+        # Only set up timers if the UI elements exist
+        if hasattr(self, 'dashboard_tab'):
+            self.dashboard_timer = QTimer()
+            self.dashboard_timer.timeout.connect(self.update_dashboard)
+            self.dashboard_timer.start(10000)  # Update every 10 seconds
+        
+        if hasattr(self, 'events_table'):
+            self.events_timer = QTimer()
+            self.events_timer.timeout.connect(lambda: self.update_events_table(100))
+            self.events_timer.start(5000)  # Update every 5 seconds
+        
+        if hasattr(self, 'alerts_table'):
+            self.alerts_timer = QTimer()
+            self.alerts_timer.timeout.connect(lambda: self.update_alerts_table(100))
+            self.alerts_timer.start(5000)  # Update every 5 seconds
+        
+    def setup_connections(self):
+        """Set up signal-slot connections."""
+        # Connect event manager signals
+        self.event_manager.event_added.connect(self.handle_new_event)
+        self.event_manager.alert_triggered.connect(self.handle_new_alert)
+        
+    def handle_new_event(self, event):
+        """Handle new event from the event manager."""
+        # Update event count
+        if hasattr(self, 'events_received'):
+            self.agentless_stats['events_received'] += 1
+            self.events_received.setText(f"Events Received: {self.agentless_stats['events_received']}")
+    
+    def handle_new_alert(self, alert):
+        """Handle new alert from the event manager."""
+        # Update alerts table if needed
+        if hasattr(self, 'alerts_table'):
+            self.update_alerts_table()
+    
     def setup_ui(self):
         """Initialize the main UI components."""
-        # Create central widget and layout
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.main_layout = QVBoxLayout(self.central_widget)
+        # Create main widget and layout
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QVBoxLayout(main_widget)
         
-        # Create tabs
-        self.tabs = QTabWidget()
-        self.main_layout.addWidget(self.tabs)
+        # Create tab widget (using tab_widget instead of tabs for consistency)
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
         
-        # Dashboard Tab
+        # Create tab widgets
         self.dashboard_tab = QWidget()
-        self.setup_dashboard_tab()
-        self.tabs.addTab(self.dashboard_tab, "Dashboard")
-        
-        # Events Tab
         self.events_tab = QWidget()
-        self.setup_events_tab()
-        self.tabs.addTab(self.events_tab, "Events")
-        
-        # Alerts Tab
         self.alerts_tab = QWidget()
-        self.setup_alerts_tab()
-        self.tabs.addTab(self.alerts_tab, "Alerts")
+        self.agentless_tab = QWidget()
         
-        # Status Bar
-        self.statusBar().showMessage("Ready")
+        # Add tabs to the tab widget
+        self.tab_widget.addTab(self.dashboard_tab, "Dashboard")
+        self.tab_widget.addTab(self.events_tab, "Events")
+        self.tab_widget.addTab(self.alerts_tab, "Alerts")
+        self.tab_widget.addTab(self.agentless_tab, "Agentless Collection")
+        
+        # Set up status bar
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        
+        # Set up tab contents
+        self.setup_dashboard_tab()
+        self.setup_events_tab()
+        self.setup_alerts_tab()
+        self.setup_agentless_tab()
+        
+        # Set initial status message
+        self.status_bar.showMessage("Ready")
         
     def setup_dashboard_tab(self):
         """Set up the dashboard tab with metrics and charts."""
         layout = QVBoxLayout(self.dashboard_tab)
         
-        # Add metrics
+        # Add metrics section
+        metrics_group = QGroupBox("Metrics")
         metrics_layout = QHBoxLayout()
+        
+        # Event metrics
         self.events_count_label = QLabel("Total Events: 0")
         self.alerts_count_label = QLabel("Active Alerts: 0")
-        metrics_layout.addWidget(self.events_count_label)
-        metrics_layout.addWidget(self.alerts_count_label)
-        layout.addLayout(metrics_layout)
+        
+        # Style the labels
+        for label in [self.events_count_label, self.alerts_count_label]:
+            label.setStyleSheet("font-size: 14px; font-weight: bold;")
+            metrics_layout.addWidget(label)
+            
+        metrics_group.setLayout(metrics_layout)
+        layout.addWidget(metrics_group)
         
         # Add charts area
+        chart_group = QGroupBox("Event Statistics")
+        chart_layout = QVBoxLayout()
+        
         self.chart_view = QChartView()
         self.chart_view.setRenderHint(QPainter.Antialiasing)
-        layout.addWidget(self.chart_view)
+        chart_layout.addWidget(self.chart_view)
         
+        chart_group.setLayout(chart_layout)
+        layout.addWidget(chart_group)
+        
+        # Add stretch to push content to the top
+        layout.addStretch()
+        
+    def toggle_auto_refresh(self, state):
+        """Toggle auto-refresh of the events table."""
+        if hasattr(self, 'refresh_timer'):
+            self.refresh_timer.stop()
+            
+        if state == Qt.Checked:
+            if not hasattr(self, 'refresh_timer'):
+                self.refresh_timer = QTimer()
+                self.refresh_timer.timeout.connect(self.update_events_table)
+            self.refresh_timer.start(5000)  # 5 seconds
+            
+    def apply_filters(self):
+        """Apply filters to the events table."""
+        try:
+            if not hasattr(self, 'events_table'):
+                return
+                
+            filter_text = self.filter_text.text().lower()
+            severity_filter = self.severity_filter.currentText().lower()
+            
+            for row in range(self.events_table.rowCount()):
+                show_row = True
+                
+                # Apply severity filter
+                if severity_filter and severity_filter != "all severities":
+                    severity_item = self.events_table.item(row, 3)  # Severity is in column 3
+                    if severity_item and severity_filter not in severity_item.text().lower():
+                        show_row = False
+                
+                # Apply text filter
+                if show_row and filter_text:
+                    row_matches = False
+                    for col in range(self.events_table.columnCount()):
+                        item = self.events_table.item(row, col)
+                        if item and filter_text in item.text().lower():
+                            row_matches = True
+                            break
+                    show_row = row_matches
+                
+                self.events_table.setRowHidden(row, not show_row)
+                
+        except Exception as e:
+            logging.error(f"Error applying filters: {e}")
+            self.statusBar().showMessage(f"Error applying filters: {str(e)}", 5000)
+            
+    def show_event_context_menu(self, position):
+        """Show context menu for event table items."""
+        try:
+            if not hasattr(self, 'events_table'):
+                return
+                
+            selected_rows = self.events_table.selectionModel().selectedRows()
+            if not selected_rows:
+                return
+                
+            menu = QMenu()
+            
+            # Add View Details action
+            view_action = menu.addAction("View Details")
+            
+            # Add actions based on selection
+            if len(selected_rows) == 1:
+                menu.addSeparator()
+                copy_action = menu.addAction("Copy Event ID")
+                
+            # Add bulk actions for multiple selections
+            if len(selected_rows) > 1:
+                menu.addSeparator()
+                bulk_ack_action = menu.addAction(f"Acknowledge {len(selected_rows)} Events")
+                
+            # Show the menu and get the selected action
+            action = menu.exec_(self.events_table.viewport().mapToGlobal(position))
+            
+            if action == view_action:
+                self.view_event_details(selected_rows[0].row())
+            elif 'copy_action' in locals() and action == copy_action:
+                self.copy_event_id(selected_rows[0].row())
+            elif 'bulk_ack_action' in locals() and action == bulk_ack_action:
+                self.acknowledge_events([row.row() for row in selected_rows])
+                
+        except Exception as e:
+            logging.error(f"Error showing context menu: {e}")
+            self.statusBar().showMessage(f"Error: {str(e)}", 5000)
+            
+    def view_event_details(self, row):
+        """Show detailed view of the selected event."""
+        try:
+            event_id = self.events_table.item(row, 0).text()  # Assuming ID is in first column
+            # TODO: Implement event details view
+            self.statusBar().showMessage(f"Viewing details for event {event_id}", 3000)
+            
+        except Exception as e:
+            logging.error(f"Error viewing event details: {e}")
+            self.statusBar().showMessage(f"Error viewing event: {str(e)}", 5000)
+            
+    def copy_event_id(self, row):
+        """Copy event ID to clipboard."""
+        try:
+            event_id = self.events_table.item(row, 0).text()
+            QApplication.clipboard().setText(event_id)
+            self.statusBar().showMessage("Event ID copied to clipboard", 2000)
+            
+        except Exception as e:
+            logging.error(f"Error copying event ID: {e}")
+            self.statusBar().showMessage(f"Error copying ID: {str(e)}", 5000)
+            
+    def acknowledge_events(self, rows):
+        """Acknowledge multiple events."""
+        try:
+            event_ids = [self.events_table.item(row, 0).text() for row in rows]
+            # TODO: Implement event acknowledgment logic
+            self.statusBar().showMessage(f"Acknowledged {len(event_ids)} events", 3000)
+            
+        except Exception as e:
+            logging.error(f"Error acknowledging events: {e}")
+            self.statusBar().showMessage(f"Error acknowledging events: {str(e)}", 5000)
+            
     def setup_events_tab(self):
-        """Set up the events tab with a table view."""
-        layout = QVBoxLayout(self.events_tab)
+        """Set up the events tab with a table view and controls."""
+        self.events_tab = QWidget()
+        self.tab_widget.addTab(self.events_tab, "Events")
         
-        # Create table
+        # Main layout
+        main_layout = QVBoxLayout(self.events_tab)
+        
+        # Controls layout
+        controls_layout = QHBoxLayout()
+        
+        # Refresh button
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(lambda: self.update_events_table())
+        controls_layout.addWidget(self.refresh_btn)
+        
+        # Auto-refresh toggle
+        self.auto_refresh = QCheckBox("Auto-refresh (5s)")
+        self.auto_refresh.setChecked(True)
+        self.auto_refresh.stateChanged.connect(self.toggle_auto_refresh)
+        controls_layout.addWidget(self.auto_refresh)
+        
+        # Filter controls
+        controls_layout.addWidget(QLabel("Filter:"))
+        self.filter_text = QLineEdit()
+        self.filter_text.setPlaceholderText("Search events...")
+        self.filter_text.textChanged.connect(self.apply_filters)
+        controls_layout.addWidget(self.filter_text)
+        
+        # Severity filter
+        self.severity_filter = QComboBox()
+        self.severity_filter.addItem("All Severities", "")
+        self.severity_filter.addItem("Critical", "critical")
+        self.severity_filter.addItem("High", "high")
+        self.severity_filter.addItem("Medium", "medium")
+        self.severity_filter.addItem("Low", "low")
+        self.severity_filter.addItem("Info", "info")
+        self.severity_filter.currentIndexChanged.connect(self.apply_filters)
+        controls_layout.addWidget(self.severity_filter)
+        
+        # Add controls to main layout
+        main_layout.addLayout(controls_layout)
+        
+        # Create table with better defaults
         self.events_table = QTableWidget()
-        self.events_table.setColumnCount(5)
-        self.events_table.setHorizontalHeaderLabels(["Timestamp", "Source", "Type", "Severity", "Description"])
-        self.events_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.events_table.verticalHeader().setVisible(False)
+        self.events_table.setColumnCount(6)
+        self.events_table.setHorizontalHeaderLabels(["Timestamp", "Source", "Type", "Severity", "Description", "Details"])
         
-        layout.addWidget(self.events_table)
+        # Configure table
+        header = self.events_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Timestamp
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Source
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Type
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Severity
+        header.setSectionResizeMode(4, QHeaderView.Stretch)  # Description (takes remaining space)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Details button
+        
+        self.events_table.verticalHeader().setVisible(False)
+        self.events_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.events_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.events_table.setSortingEnabled(True)
+        
+        # Enable context menu
+        self.events_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.events_table.customContextMenuRequested.connect(self.show_event_context_menu)
+        
+        # Add table to layout with stretch
+        main_layout.addWidget(self.events_table)
+        
+        # Status bar
+        self.status_bar = QStatusBar()
+        self.status_bar.showMessage("Ready")
+        main_layout.addWidget(self.status_bar)
+        
+        # Set initial sort order (most recent first)
+        self.events_table.sortByColumn(0, Qt.DescendingOrder)
         
     def setup_alerts_tab(self):
         """Set up the alerts tab with a table view."""
         layout = QVBoxLayout(self.alerts_tab)
         
-        # Create table
+        # Add alerts table
         self.alerts_table = QTableWidget()
-        self.alerts_table.setColumnCount(5)
-        self.alerts_table.setHorizontalHeaderLabels(["Timestamp", "Title", "Severity", "Status", "Source"])
+        self.alerts_table.setColumnCount(6)
+        self.alerts_table.setHorizontalHeaderLabels(["Timestamp", "Source", "Severity", "Status", "Title", "Description"])
         self.alerts_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.alerts_table.verticalHeader().setVisible(False)
+        self.alerts_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.alerts_table.setSelectionBehavior(QTableWidget.SelectRows)
+        
+        # Initialize stats
+        self.agentless_stats = {
+            'events_received': 0,
+            'bytes_received': 0,
+            'start_time': datetime.now(),
+            'connected_devices': {}
+        }
+        
+        # Start monitoring the process
+        self.agentless_timer = QTimer(self)
+        self.agentless_timer.timeout.connect(self.check_agentless_status)
+        self.agentless_timer.start(1000)  # Check every second
+        
+        # Start updating the UI every 5 seconds
+        self.agentless_ui_timer = QTimer(self)
+        self.agentless_ui_timer.timeout.connect(self.update_agentless_ui)
+        self.agentless_ui_timer.start(5000)  # Update every 5 seconds
+        
+        # Initial UI update
+        self.update_agentless_ui()
         
         layout.addWidget(self.alerts_table)
         
-    def setup_connections(self):
-        """Set up signal-slot connections."""
-        # Connect menu actions
-        self.tabs.currentChanged.connect(self.on_tab_changed)
+    def start_agentless_collection(self):
+        """Start the agentless collector."""
+        try:
+            # Start the agentless collector process
+            self.agentless_process = subprocess.Popen(
+                [sys.executable, '-m', 'siem.collectors.agentless'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Update UI
+            self.agentless_status.setText("Status: Running")
+            self.agentless_status.setStyleSheet("color: green;")
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+            
+            # Start monitoring the process
+            self.agentless_timer = QTimer(self)
+            self.agentless_timer.timeout.connect(self.check_agentless_status)
+            self.agentless_timer.start(1000)  # Check every second
+            
+            # Initialize stats
+            self.agentless_stats = {
+                'events_received': 0,
+                'bytes_received': 0,
+                'start_time': datetime.now()
+            }
+            
+        except Exception as e:
+            logging.error(f"Error starting agentless collector: {e}", exc_info=True)
+            self.agentless_status.setText("Status: Error")
+            self.agentless_status.setStyleSheet("color: red;")
+
+    def setup_agentless_tab(self):
+        """Set up the agentless collector tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         
-    def setup_timers(self):
-        """Set up timers for periodic updates."""
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.refresh_data)
-        self.update_timer.start(5000)  # Update every 5 seconds
+        # Stats layout
+        stats_layout = QHBoxLayout()
+        self.events_received = QLabel("Events Received: 0")
+        self.bytes_received = QLabel("Data Received: 0 B")
+        self.avg_rate = QLabel("Average Rate: 0.00 events/sec")
         
-    def on_tab_changed(self, index):
-        """Handle tab change events."""
-        if self.tabs.tabText(index) == "Events":
-            self.update_events_table()
-        elif self.tabs.tabText(index) == "Alerts":
-            self.update_alerts_table()
+        stats_layout.addWidget(self.events_received)
+        stats_layout.addWidget(self.bytes_received)
+        stats_layout.addWidget(self.avg_rate)
+        stats_layout.addStretch()
+        
+        # Add stats to main layout
+        layout.addLayout(stats_layout)
+        
+        # Add agentless tab to the main tab widget
+        self.tab_widget.addTab(tab, "Agentless Collection")
+        
+        status_group = QGroupBox("Collector Status")
+        main_layout = QVBoxLayout()
+        
+        # Status and stats layout
+        status_layout = QHBoxLayout()
+        
+        # Left side - Status indicators
+        status_left = QVBoxLayout()
+        
+        # Collector status
+        self.agentless_status = QLabel("Status: Stopped")
+        self.agentless_status.setStyleSheet("font-weight: bold; color: red;")
+        status_left.addWidget(self.agentless_status)
+        
+        # Collector services status
+        self.syslog_status = QLabel("Syslog: Not Running")
+        self.snmp_status = QLabel("SNMP Trap: Not Running")
+        self.wef_status = QLabel("Windows Event Forwarding: Not Running")
+        
+        for status in [self.syslog_status, self.snmp_status, self.wef_status]:
+            status.setStyleSheet("color: red;")
+            status_left.addWidget(status)
+        
+        status_layout.addLayout(status_left, 1)  # Add stretch factor
+        
+        # Right side - Statistics
+        stats_group = QGroupBox("Statistics")
+        stats_layout = QVBoxLayout()
+        
+        self.events_received = QLabel("Events Received: 0")
+        self.bytes_received = QLabel("Data Received: 0 B")
+        self.avg_rate = QLabel("Average Rate: 0.00 events/sec")
+        self.connected_devices_count = QLabel("Connected Devices: 0")
+        
+        for stat in [self.events_received, self.bytes_received, 
+                    self.avg_rate, self.connected_devices_count]:
+            stats_layout.addWidget(stat)
+            
+        stats_group.setLayout(stats_layout)
+        status_layout.addWidget(stats_group, 1)  # Add stretch factor
+        
+        main_layout.addLayout(status_layout)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        self.start_btn = QPushButton("Start")
+        self.stop_btn = QPushButton("Stop")
+        self.refresh_btn = QPushButton("Refresh")
+        self.stop_btn.setEnabled(False)
+        
+        self.start_btn.clicked.connect(self.start_agentless_collection)
+        self.stop_btn.clicked.connect(self.stop_agentless_collection)
+        self.refresh_btn.clicked.connect(self.update_agentless_ui)
+        
+        btn_layout.addWidget(self.start_btn)
+        btn_layout.addWidget(self.stop_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.refresh_btn)
+        
+        main_layout.addLayout(btn_layout)
+        status_group.setLayout(main_layout)
+        layout.addWidget(status_group)
+        
+        # Connected devices table
+        devices_group = QGroupBox("Connected Devices")
+        devices_layout = QVBoxLayout()
+        
+        # Create the devices table
+        self.devices_table = QTableWidget()
+        self.devices_table.setColumnCount(6)
+        self.devices_table.setHorizontalHeaderLabels([
+            "IP Address", "Type", "Status", "First Seen", "Last Seen", "Messages"
+        ])
+        
+        # Configure table properties
+        self.devices_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.devices_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.devices_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.devices_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.devices_table.customContextMenuRequested.connect(self.show_device_context_menu)
+        
+        # Set column resize modes
+        header = self.devices_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # IP
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Type
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # First Seen
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Last Seen
+        header.setSectionResizeMode(5, QHeaderView.Stretch)  # Messages
+        
+        # Add filter controls
+        filter_layout = QHBoxLayout()
+        self.device_filter = QLineEdit()
+        self.device_filter.setPlaceholderText("Filter devices...")
+        self.device_filter.textChanged.connect(self.filter_devices)
+        
+        self.device_type_filter = QComboBox()
+        self.device_type_filter.addItem("All Types")
+        self.device_type_filter.addItems(["Syslog", "SNMP", "WEF"])
+        self.device_type_filter.currentTextChanged.connect(self.filter_devices)
+        
+        filter_layout.addWidget(QLabel("Search:"))
+        filter_layout.addWidget(self.device_filter, 1)
+        filter_layout.addWidget(QLabel("Type:"))
+        filter_layout.addWidget(self.device_type_filter)
+        
+        devices_layout.addLayout(filter_layout)
+        devices_layout.addWidget(self.devices_table)
+        devices_group.setLayout(devices_layout)
+        
+        layout.addWidget(devices_group, 1)  # Add stretch factor
+        
+        # Initialize agentless stats
+        self.agentless_stats = {
+            'events_received': 0,
+            'bytes_received': 0,
+            'start_time': None,
+            'devices': {}
+        }
+        
+        # Initialize UI elements
+        self.events_received = QLabel("Events Received: 0")
+        self.bytes_received = QLabel("Data Received: 0 B")
+        self.avg_rate = QLabel("Average Rate: 0.00 events/sec")
+        
+        # Add to stats layout if it exists
+        if hasattr(self, 'stats_layout'):
+            self.stats_layout.addWidget(self.events_received)
+            self.stats_layout.addWidget(self.bytes_received)
+            self.stats_layout.addWidget(self.avg_rate)
+        
+        # Initialize UI update timer
+        self.agentless_ui_timer = QTimer()
+        self.agentless_ui_timer.timeout.connect(self.update_agentless_ui)
+        self.agentless_ui_timer.start(5000)  # Update every 5 seconds
+        
+        # Configure table properties
+        self.devices_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.devices_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.devices_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.devices_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.devices_table.customContextMenuRequested.connect(self.show_device_context_menu)
+        
+        # Set column resize modes
+        header = self.devices_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # IP
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Type
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # First Seen
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Last Seen
+        header.setSectionResizeMode(5, QHeaderView.Stretch)  # Messages
+        
+        devices_layout.addWidget(self.devices_table)
+        
+        # Add filter controls
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter:"))
+        
+        self.device_filter = QLineEdit()
+        self.device_filter.setPlaceholderText("Filter devices...")
+        self.device_filter.textChanged.connect(self.filter_devices)
+        
+        self.device_type_filter = QComboBox()
+        self.device_type_filter.addItem("All Types", "")
+        self.device_type_filter.addItem("Syslog", "syslog")
+        self.device_type_filter.addItem("SNMP", "snmp")
+        self.device_type_filter.addItem("WEF", "wef")
+        self.device_type_filter.currentIndexChanged.connect(self.filter_devices)
+        
+        filter_layout.addWidget(self.device_filter)
+        filter_layout.addWidget(self.device_type_filter)
+        
+        devices_layout.addLayout(filter_layout)
+        devices_layout.addWidget(self.devices_table)
+        devices_group.setLayout(devices_layout)
+        layout.addWidget(devices_group, 1)  # Add stretch factor to make it take remaining space
+        
+    def check_agentless_status(self):
+        """Check the status of the agentless collector and update UI accordingly."""
+        if not hasattr(self, 'agentless_process'):
+            return
+            
+        # Check if process is still running
+        if self.agentless_process.poll() is not None:
+            # Process has ended
+            self.agentless_status.setText("Status: Stopped")
+            self.agentless_status.setStyleSheet("color: red;")
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            
+            # Stop the timer if it's still running
+            if hasattr(self, 'agentless_timer'):
+                self.agentless_timer.stop()
+    
+    def stop_agentless_collection(self):
+        """Stop the agentless collector."""
+        try:
+            if hasattr(self, 'agentless_timer'):
+                self.agentless_timer.stop()
+                
+            # Check if process is still running without blocking
+            if self.agentless_process.poll() is None:
+                # Process is still running
+                current_time = datetime.now()
+                
+                # Check if we've received any updates recently
+                last_update = self.agentless_stats.get('last_update')
+                if last_update and (current_time - last_update).total_seconds() > 30:
+                    # No updates in 30 seconds, might be stuck
+                    logging.warning("Agentless collector running but no updates received in 30 seconds")
+                    self.syslog_status.setText("Syslog: No Data (Running)")
+                    self.syslog_status.setStyleSheet("font-weight: bold; color: orange;")
+                    self.snmp_status.setText("SNMP Trap: No Data (Running)")
+                    self.snmp_status.setStyleSheet("font-weight: bold; color: orange;")
+                    self.wef_status.setText("Windows Event Forwarding: No Data (Running)")
+                    self.wef_status.setStyleSheet("font-weight: bold; color: orange;")
+                else:
+                    # Update UI for running state with event count
+                    event_count = self.agentless_stats.get('events_received', 0)
+                    self.syslog_status.setText(f"Syslog: Running ({event_count} events)")
+                    self.syslog_status.setStyleSheet("font-weight: bold; color: green;")
+                    self.snmp_status.setText(f"SNMP Trap: Running ({event_count} events)")
+                    self.snmp_status.setStyleSheet("font-weight: bold; color: green;")
+                    self.wef_status.setText(f"Windows Event Forwarding: Running ({event_count} events)")
+                    self.wef_status.setStyleSheet("font-weight: bold; color: green;")
+                
+                # Schedule next status check
+                QTimer.singleShot(2000, self.check_agentless_status)
+            else:
+                # Process has ended
+                return_code = self.agentless_process.returncode
+                logging.info(f"Agentless collector process ended with return code: {return_code}")
+                
+                # Read any remaining output
+                try:
+                    stdout, stderr = self.agentless_process.communicate(timeout=1)
+                    if stdout:
+                        logging.debug(f"Agentless collector final stdout: {stdout}")
+                    if stderr:
+                        logging.error(f"Agentless collector final stderr: {stderr}")
+                except (subprocess.TimeoutExpired, ValueError):
+                    pass
+                
+                # Clean up
+                self.agentless_process = None
+                self.start_btn.setEnabled(True)
+                self.stop_btn.setEnabled(False)
+                
+                # Update UI for stopped state
+                self.syslog_status.setText("Syslog: Stopped")
+                self.syslog_status.setStyleSheet("font-weight: bold; color: red;")
+                self.snmp_status.setText("SNMP Trap: Stopped")
+                self.snmp_status.setStyleSheet("font-weight: bold; color: red;")
+                self.wef_status.setText("Windows Event Forwarding: Stopped")
+                self.wef_status.setStyleSheet("font-weight: bold; color: red;")
+                
+                # Show error message if the process failed
+                if return_code != 0:
+                    QMessageBox.warning(
+                        self,
+                        "Agentless Collector Error",
+                        f"The agentless collector stopped unexpectedly with return code {return_code}.\n\n"
+                        "Check the logs for more information."
+                    )
+                
+        except Exception as e:
+            logging.error(f"Error in check_agentless_status: {e}", exc_info=True)
+            if hasattr(self, 'agentless_process'):
+                self.agentless_process = None
+                
+            # Reset UI on error
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.syslog_status.setText("Syslog: Error")
+            self.syslog_status.setStyleSheet("font-weight: bold; color: red;")
+            self.snmp_status.setText("SNMP Trap: Error")
+            self.snmp_status.setStyleSheet("font-weight: bold; color: red;")
+            self.wef_status.setText("Windows Event Forwarding: Error")
+            self.wef_status.setStyleSheet("font-weight: bold; color: red;")
+    
+    def refresh_agentless_devices(self):
+        """Refresh the list of connected devices from the agentless collector."""
+        if not hasattr(self, 'agentless_collector') or self.agentless_collector is None:
+            return
+            
+        try:
+            # Get connected devices from the agentless collector
+            devices = asyncio.run_coroutine_threadsafe(
+                self.agentless_collector.get_connected_devices(),
+                asyncio.get_event_loop()
+            ).result()
+            
+            # Update the connected devices count
+            self.connected_devices_count.setText(f"Connected Devices: {len(devices)}")
+            
+            # Store the current filter text and type
+            filter_text = self.device_filter.text().lower()
+            filter_type = self.device_type_filter.currentData()
+            
+            # Clear the table
+            self.devices_table.setRowCount(0)
+            
+            # Add devices to the table
+            for device_id, device in devices.items():
+                # Apply filters
+                if filter_text and filter_text not in device.get('ip', '').lower():
+                    continue
+                    
+                if filter_type and device.get('type') != filter_type:
+                    continue
+                
+                # Format timestamps
+                first_seen = datetime.fromtimestamp(device.get('first_seen', 0))
+                last_seen = datetime.fromtimestamp(device.get('last_seen', 0))
+                
+                # Add a new row
+                row = self.devices_table.rowCount()
+                self.devices_table.insertRow(row)
+                
+                # Set the data for each column
+                self.devices_table.setItem(row, 0, QTableWidgetItem(device.get('ip', 'Unknown')))
+                self.devices_table.setItem(row, 1, QTableWidgetItem(device.get('type', 'Unknown').upper()))
+                
+                # Status with color coding
+                status_item = QTableWidgetItem(device.get('status', 'unknown').capitalize())
+                if device.get('status') == 'connected':
+                    status_item.setForeground(QColor(0, 128, 0))  # Green for connected
+                elif device.get('status') == 'disconnected':
+                    status_item.setForeground(QColor(200, 0, 0))  # Red for disconnected
+                else:
+                    status_item.setForeground(QColor(200, 100, 0))  # Orange for blocked
+                self.devices_table.setItem(row, 2, status_item)
+                
+                # Timestamps
+                self.devices_table.setItem(row, 3, QTableWidgetItem(first_seen.strftime('%Y-%m-%d %H:%M:%S')))
+                self.devices_table.setItem(row, 4, QTableWidgetItem(last_seen.strftime('%Y-%m-%d %H:%M:%S')))
+                self.devices_table.setItem(row, 5, QTableWidgetItem(str(device.get('message_count', 0))))
+                
+                # Store the device ID as data in the first column
+                self.devices_table.item(row, 0).setData(Qt.UserRole, device_id)
+                
+        except Exception as e:
+            logger.error(f"Error refreshing device list: {e}", exc_info=True)
+    
+    def filter_devices(self):
+        """Filter the devices table based on the current filter text and type."""
+        self.refresh_agentless_devices()
+    
+    def show_device_context_menu(self, position):
+        """Show the context menu for a device."""
+        selected_items = self.devices_table.selectedItems()
+        if not selected_items:
+            return
+            
+        # Get the device ID from the first column of the selected row
+        row = selected_items[0].row()
+        device_id = self.devices_table.item(row, 0).data(Qt.UserRole)
+        device_ip = self.devices_table.item(row, 0).text()
+        current_status = self.devices_table.item(row, 2).text().lower()
+        
+        # Create the context menu
+        menu = QMenu()
+        
+        # Add actions
+        view_details_action = menu.addAction("View Details")
+        copy_ip_action = menu.addAction("Copy IP Address")
+        menu.addSeparator()
+        
+        # Add block/unblock action based on current status
+        if current_status != 'blocked':
+            block_action = menu.addAction("Block Device")
+        else:
+            block_action = menu.addAction("Unblock Device")
+        
+        # Show the menu and get the selected action
+        action = menu.exec_(self.devices_table.viewport().mapToGlobal(position))
+        
+        # Handle the selected action
+        if action == view_details_action:
+            self.show_device_details(device_id)
+        elif action == copy_ip_action:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(device_ip)
+            self.status_bar.showMessage(f"Copied {device_ip} to clipboard", 2000)
+        elif action == block_action:
+            self.toggle_device_block(device_id, current_status != 'blocked')
+    
+    def show_device_details(self, device_id):
+        """Show detailed information about a device."""
+        try:
+            if not hasattr(self, 'agentless_collector') or not self.agentless_collector:
+                return
+                
+            # Get device details
+            devices = asyncio.run_coroutine_threadsafe(
+                self.agentless_collector.get_connected_devices(),
+                asyncio.get_event_loop()
+            ).result()
+            
+            device = devices.get(device_id)
+            if not device:
+                return
+                
+            # Create a dialog to show device details
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Device Details - {device.get('ip', 'Unknown')}")
+            dialog.setMinimumSize(500, 400)
+            
+            layout = QVBoxLayout()
+            
+            # Basic info in a form layout
+            form_layout = QFormLayout()
+            form_layout.addRow("IP Address:", QLabel(device.get('ip', 'Unknown')))
+            form_layout.addRow("Type:", QLabel(device.get('type', 'Unknown').upper()))
+            form_layout.addRow("Status:", QLabel(device.get('status', 'unknown').capitalize()))
+            form_layout.addRow("First Seen:", QLabel(datetime.fromtimestamp(device.get('first_seen', 0)).strftime('%Y-%m-%d %H:%M:%S')))
+            form_layout.addRow("Last Seen:", QLabel(datetime.fromtimestamp(device.get('last_seen', 0)).strftime('%Y-%m-%d %H:%M:%S')))
+            form_layout.addRow("Message Count:", QLabel(str(device.get('message_count', 0))))
+            
+            # Add a text area for the last message (if available)
+            if 'last_message' in device and device['last_message']:
+                last_message = QTextEdit()
+                last_message.setPlainText(device['last_message'])
+                last_message.setReadOnly(True)
+                form_layout.addRow("Last Message:", last_message)
+            
+            layout.addLayout(form_layout)
+            
+            # Add close button
+            button_box = QDialogButtonBox(QDialogButtonBox.Close)
+            button_box.rejected.connect(dialog.reject)
+            layout.addWidget(button_box)
+            
+            dialog.setLayout(layout)
+            dialog.exec_()
+            
+        except Exception as e:
+            logger.error(f"Error showing device details: {e}", exc_info=True)
+    
+    def toggle_device_block(self, device_id, block):
+        """Block or unblock a device."""
+        try:
+            if not hasattr(self, 'agentless_collector') or not self.agentless_collector:
+                return
+                
+            # Get the IP address from the device ID
+            ip = device_id.split(':')[0] if ':' in device_id else device_id
+            
+            # Call the block_device method on the agentless collector
+            future = asyncio.run_coroutine_threadsafe(
+                self.agentless_collector.block_device(ip, block),
+                asyncio.get_event_loop()
+            )
+            
+            # Wait for the operation to complete
+            success = future.result()
+            
+            if success:
+                action = "blocked" if block else "unblocked"
+                self.status_bar.showMessage(f"Successfully {action} device {ip}", 3000)
+                self.refresh_agentless_devices()
+            else:
+                self.status_bar.showMessage(f"Failed to update device status", 3000)
+                
+        except Exception as e:
+            logger.error(f"Error toggling device block status: {e}", exc_info=True)
+            self.status_bar.showMessage(f"Error: {str(e)}", 5000)
+    
+    def update_agentless_ui(self):
+        """Update the agentless collector UI with current stats."""
+        try:
+            if not hasattr(self, 'events_received') or not hasattr(self, 'bytes_received') or not hasattr(self, 'avg_rate'):
+                return
+                
+            # Update events count
+            self.events_received.setText(f"Events Received: {self.agentless_stats.get('events_received', 0)}")
+            
+            # Format bytes to human-readable format
+            bytes_received = self.agentless_stats.get('bytes_received', 0)
+            if bytes_received < 1024:
+                bytes_str = f"{bytes_received} B"
+            elif bytes_received < 1024 * 1024:
+                bytes_str = f"{bytes_received/1024:.2f} KB"
+            else:
+                bytes_str = f"{bytes_received/(1024*1024):.2f} MB"
+            
+            self.bytes_received.setText(f"Data Received: {bytes_str}")
+            
+            # Calculate average rate
+            if self.agentless_stats.get('start_time'):
+                elapsed = (datetime.now() - self.agentless_stats['start_time']).total_seconds()
+                if elapsed > 0:
+                    rate = self.agentless_stats.get('events_received', 0) / elapsed
+                    self.avg_rate.setText(f"Average Rate: {rate:.2f} events/sec")
+                    
+        except Exception as e:
+            logging.error(f"Error in update_agentless_ui: {e}", exc_info=True)
+            
+            # Calculate and display average rate
+            if self.agentless_stats.get('start_time') is not None:
+                elapsed = (datetime.now() - self.agentless_stats['start_time']).total_seconds()
+                if elapsed > 0:
+                    rate = self.agentless_stats['events_received'] / elapsed
+                    self.avg_rate.setText(f"Average Rate: {rate:.2f} events/sec")
+            
+            # Update connected devices if agentless collector is running
+            if hasattr(self, 'agentless_collector') and self.agentless_collector is not None:
+                try:
+                    # Get connected devices from the agentless collector
+                    devices = asyncio.run_coroutine_threadsafe(
+                        self.agentless_collector.get_connected_devices(),
+                        asyncio.get_event_loop()
+                    ).result()
+                    
+                    # Update devices count
+                    self.connected_devices_count.setText(f"Connected Devices: {len(devices)}")
+                    
+                    # Update devices table
+                    self.devices_table.setRowCount(len(devices))
+                    
+                    for row, (device_id, device_info) in enumerate(devices.items()):
+                        self.devices_table.setItem(row, 0, QTableWidgetItem(device_info.get('ip', 'N/A')))
+                        self.devices_table.setItem(row, 1, QTableWidgetItem(device_info.get('type', 'unknown').upper()))
+                        
+                        first_seen = device_info.get('first_seen', datetime.now())
+                        last_seen = device_info.get('last_seen', datetime.now())
+                        
+                        self.devices_table.setItem(row, 2, QTableWidgetItem(first_seen.strftime('%Y-%m-%d %H:%M:%S')))
+                        self.devices_table.setItem(row, 3, QTableWidgetItem(last_seen.strftime('%Y-%m-%d %H:%M:%S')))
+                        self.devices_table.setItem(row, 4, QTableWidgetItem(str(device_info.get('message_count', 0))))
+                        
+                        # Color code by last seen time (red if not seen in last 5 minutes)
+                        if (datetime.now() - last_seen).total_seconds() > 300:  # 5 minutes
+                            for col in range(self.devices_table.columnCount()):
+                                self.devices_table.item(row, col).setBackground(QColor(255, 200, 200))  # Light red
+                
+                except Exception as e:
+                    logging.error(f"Error updating connected devices: {e}", exc_info=True)
+                    self.connected_devices_count.setText("Connected Devices: Error")
+            else:
+                # Clear the table if agentless collector is not running
+                self.devices_table.setRowCount(0)
+                self.connected_devices_count.setText("Connected Devices: 0")
+                
+        except Exception as e:
+            logging.error(f"Error in update_agentless_ui: {e}", exc_info=True)
             
     def refresh_data(self):
         """Refresh all data in the UI."""
-        current_tab = self.tabs.tabText(self.tabs.currentIndex())
+        current_tab = self.tab_widget.tabText(self.tab_widget.currentIndex())
         if current_tab == "Events":
             self.update_events_table()
         elif current_tab == "Alerts":
@@ -812,11 +1696,162 @@ class Database:
         self.cursor.execute('UPDATE alerts SET status = ?, notes = ? WHERE id = ?', (status, notes, alert_id))
         self.conn.commit()
 
+    def toggle_auto_refresh(self, state):
+        """Toggle auto-refresh of the events table."""
+        if hasattr(self, 'refresh_timer'):
+            self.refresh_timer.stop()
+            
+        if state == Qt.Checked:
+            self.refresh_timer = QTimer()
+            self.refresh_timer.timeout.connect(self.update_events_table)
+            self.refresh_timer.start(5000)  # 5 seconds
+            
+    def apply_filters(self):
+        """Apply filters to the events table."""
+        try:
+            filter_text = self.filter_text.text().lower()
+            severity_filter = self.severity_filter.currentData()
+            
+            for row in range(self.events_table.rowCount()):
+                show_row = True
+                
+                # Apply severity filter
+                if severity_filter:
+                    severity = self.events_table.item(row, 3).text().lower()
+                    if severity != severity_filter:
+                        show_row = False
+                
+                # Apply text filter
+                if show_row and filter_text:
+                    row_matches = False
+                    for col in range(self.events_table.columnCount() - 1):  # Skip details column
+                        item = self.events_table.item(row, col)
+                        if item and filter_text in item.text().lower():
+                            row_matches = True
+                            break
+                    show_row = row_matches
+                
+                # Show/hide row based on filters
+                self.events_table.setRowHidden(row, not show_row)
+                
+            # Update status bar with visible count
+            visible_rows = sum(1 for row in range(self.events_table.rowCount()) 
+                             if not self.events_table.isRowHidden(row))
+            self.status_bar.showMessage(f"Showing {visible_rows} of {self.events_table.rowCount()} events")
+            
+        except Exception as e:
+            logging.error(f"Error applying filters: {e}")
+            self.status_bar.showMessage(f"Error applying filters: {str(e)}")
+            
+    def show_event_context_menu(self, position):
+        """Show context menu for event actions."""
+        menu = QMenu()
+        
+        # Get selected rows
+        selected_rows = set(index.row() for index in self.events_table.selectedIndexes())
+        
+        if selected_rows:
+            copy_action = menu.addAction("Copy to Clipboard")
+            copy_action.triggered.connect(lambda: self.copy_events_to_clipboard(selected_rows))
+            
+            # Add separator
+            menu.addSeparator()
+            
+            # Add action to view event details
+            if len(selected_rows) == 1:
+                view_details = menu.addAction("View Details")
+                view_details.triggered.connect(lambda: self.view_event_details(next(iter(selected_rows))))
+        
+        # Show the menu
+        if menu.actions():
+            menu.exec_(self.events_table.viewport().mapToGlobal(position))
+    
+    def copy_events_to_clipboard(self, rows):
+        """Copy selected events to clipboard as tab-separated values."""
+        try:
+            clipboard = QApplication.clipboard()
+            text = []
+            
+            # Get headers
+            headers = []
+            for col in range(self.events_table.columnCount() - 1):  # Skip details column
+                headers.append(self.events_table.horizontalHeaderItem(col).text())
+            text.append("\t".join(headers))
+            
+            # Get selected rows data
+            for row in sorted(rows):
+                if not self.events_table.isRowHidden(row):
+                    row_data = []
+                    for col in range(self.events_table.columnCount() - 1):  # Skip details column
+                        item = self.events_table.item(row, col)
+                        row_data.append(item.text() if item else "")
+                    text.append("\t".join(row_data))
+            
+            # Copy to clipboard
+            clipboard.setText("\n".join(text))
+            self.status_bar.showMessage(f"Copied {len(rows)} events to clipboard")
+            
+        except Exception as e:
+            logging.error(f"Error copying to clipboard: {e}")
+            self.status_bar.showMessage(f"Error: {str(e)}")
+    
+    def view_event_details(self, row):
+        """Show detailed view of a specific event."""
+        try:
+            # Get event ID if available
+            event_id = self.events_table.item(row, 0).data(Qt.UserRole)
+            
+            # Get all event data from the database
+            event_data = self.db.get_event_by_id(event_id) if event_id else {}
+            
+            # Create dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Event Details")
+            dialog.setMinimumSize(600, 400)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # Create text edit for displaying event data
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+            text_edit.setFont(QFont("Courier", 10))
+            
+            # Format event data as JSON
+            if event_data:
+                text_edit.setPlainText(json.dumps(event_data, indent=2, default=str))
+            else:
+                # Fallback to table data if no DB access
+                event_info = {}
+                for col in range(self.events_table.columnCount() - 1):  # Skip details column
+                    header = self.events_table.horizontalHeaderItem(col).text()
+                    item = self.events_table.item(row, col)
+                    event_info[header] = item.text() if item else ""
+                text_edit.setPlainText(json.dumps(event_info, indent=2))
+            
+            # Add close button
+            button_box = QDialogButtonBox(QDialogButtonBox.Close)
+            button_box.rejected.connect(dialog.reject)
+            
+            # Add widgets to layout
+            layout.addWidget(text_edit)
+            layout.addWidget(button_box)
+            
+            # Show the dialog
+            dialog.exec_()
+            
+        except Exception as e:
+            logging.error(f"Error showing event details: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to show event details: {str(e)}")
+    
     def update_events_table(self, limit: int = 100):
         """Update the events table with recent events from the database."""
         try:
             # Get events from database
             events = self.db.get_events(limit=limit)
+            
+            # Store current scroll position and selection
+            scroll_pos = self.events_table.verticalScrollBar().value()
+            selected_rows = set(index.row() for index in self.events_table.selectedIndexes())
             
             # Clear existing rows
             self.events_table.setRowCount(0)
@@ -831,10 +1866,15 @@ class Database:
                 
                 # Add items to table
                 self.events_table.setItem(row, 0, QTableWidgetItem(timestamp.strftime('%Y-%m-%d %H:%M:%S')))
-                self.events_table.setItem(row, 1, QTableWidgetItem(event_data['source']))
-                self.events_table.setItem(row, 2, QTableWidgetItem(event_data['event_type']))
-                self.events_table.setItem(row, 3, QTableWidgetItem(event_data['severity']))
-                self.events_table.setItem(row, 4, QTableWidgetItem(event_data['description']))
+                self.events_table.setItem(row, 1, QTableWidgetItem(event_data.get('source', 'N/A')))
+                self.events_table.setItem(row, 2, QTableWidgetItem(event_data.get('event_type', 'N/A')))
+                self.events_table.setItem(row, 3, QTableWidgetItem(event_data.get('severity', 'info').capitalize()))
+                self.events_table.setItem(row, 4, QTableWidgetItem(event_data.get('description', 'No description')))
+                
+                # Add details button
+                details_btn = QPushButton("View")
+                details_btn.clicked.connect(lambda checked, r=row: self.view_event_details(r))
+                self.events_table.setCellWidget(row, 5, details_btn)
                 
                 # Store event ID in the first column's data
                 if 'id' in event_data:
@@ -842,23 +1882,50 @@ class Database:
                 
                 # Color code by severity
                 severity = event_data.get('severity', 'info').lower()
-                if severity in ['high', 'critical']:
-                    color = QColor(255, 200, 200)  # Light red
-                elif severity == 'medium':
-                    color = QColor(255, 255, 200)  # Light yellow
-                else:
-                    color = QColor(200, 255, 200)  # Light green
-                    
-                for col in range(self.events_table.columnCount()):
-                    if self.events_table.item(row, col):
-                        self.events_table.item(row, col).setBackground(color)
+                self._apply_severity_style(row, severity)
             
-            # Resize columns to fit content
-            self.events_table.resizeColumnsToContents()
+            # Apply filters
+            self.apply_filters()
+            
+            # Restore scroll position and selection if possible
+            if scroll_pos < self.events_table.verticalScrollBar().maximum():
+                self.events_table.verticalScrollBar().setValue(scroll_pos)
+                
+            # Update status bar
+            visible_rows = sum(1 for row in range(self.events_table.rowCount()) 
+                             if not self.events_table.isRowHidden(row))
+            self.status_bar.showMessage(f"Showing {visible_rows} of {len(events)} events")
             
         except Exception as e:
             logging.error(f"Error updating events table: {e}")
-            
+            self.status_bar.showMessage(f"Error: {str(e)}")
+    
+    def _apply_severity_style(self, row, severity):
+        """Apply styling based on event severity."""
+        if severity == 'critical':
+            bg_color = QColor(255, 200, 200)  # Light red
+            text_color = QColor(150, 0, 0)    # Dark red
+        elif severity == 'high':
+            bg_color = QColor(255, 220, 180)  # Light orange
+            text_color = QColor(153, 76, 0)   # Dark orange
+        elif severity == 'medium':
+            bg_color = QColor(255, 255, 180)  # Light yellow
+            text_color = QColor(153, 153, 0)  # Dark yellow
+        elif severity == 'low':
+            bg_color = QColor(220, 255, 220)  # Light green
+            text_color = QColor(0, 100, 0)    # Dark green
+        else:  # info or default
+            bg_color = QColor(200, 230, 255)  # Light blue
+            text_color = QColor(0, 0, 150)    # Dark blue
+        
+        # Apply colors to all cells in the row
+        for col in range(self.events_table.columnCount() - 1):  # Skip details column
+            item = self.events_table.item(row, col)
+            if item:
+                item.setBackground(bg_color)
+                item.setForeground(text_color)
+                item.setFont(QFont("Segoe UI", 9, QFont.Normal))
+
     def update_dashboard(self):
         """Update the dashboard with current metrics and charts."""
         try:

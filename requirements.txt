@@ -19,3 +19,39 @@ PyQt5==5.15.9
 PyQt5-Qt5==5.15.2
 PyQt5-sip==12.17.0
 PyQtChart==5.15.7
+
+# Agentless Collection Dependencies
+pysnmp>=4.4.12                # SNMP protocol support
+pysnmp-mibs==0.1.6             # SNMP MIB support
+pyasn1>=0.4.8                 # ASN.1 encoding/decoding
+pyasn1-modules>=0.2.8         # Additional ASN.1 modules
+# aiosnmp requires compilation, skipping for now
+# aiosnmp>=0.6.0              # Async SNMP support
+asyncio>=3.4.3                # Async I/O
+aiohttp>=3.8.0                 # Async HTTP client
+wmi>=1.5.1                    # Windows Management Instrumentation
+xmltodict>=0.13.0             # XML to dict conversion
+defusedxml>=0.7.1             # Safe XML parsing
+requests_ntlm>=1.1.0           # NTLM authentication
+requests_kerberos>=0.14.0      # Kerberos authentication
+# netifaces requires compilation, skipping for now
+# netifaces>=0.11.0           # Network interface information
+pyOpenSSL>=22.0.0             # SSL/TLS support
+cryptography>=38.0.0          # Cryptographic functions
+paramiko>=2.11.0              # SSH protocol support
+# scapy requires compilation, skipping for now
+# scapy>=2.5.0                # Packet manipulation
+# python-nmap requires compilation, skipping for now
+# python-nmap>=0.7.1          # Nmap integration
+dnspython>=2.2.1              # DNS toolkit
+# python-ldap requires compilation, skipping for now
+# python-ldap>=3.4.0          # LDAP support
+python-json-logger>=2.0.4     # JSON logging
+python-multipart>=0.0.5       # For handling multipart form data
+fastapi>=0.68.0               # For REST API endpoints
+uvicorn>=0.15.0               # ASGI server
+pydantic>=1.8.2               # Data validation
+python-jose[cryptography]>=3.3.0  # JWT support
+passlib[bcrypt]>=1.7.4        # Password hashing
+trustme>=0.9.0                # For testing TLS
+aiosmtpd>=1.4.4               # Async SMTP server (for email collection)

@@ -1,0 +1,41 @@
+# Windows Event Collector Configuration
+wec:
+  enabled: true
+  server: "0.0.0.0"  # Listen on all interfaces
+  port: 5985         # Default WinRM port (HTTP)
+  ssl_enabled: false  # Set to true for production with valid certificates
+  auth_method: "ntlm" # or "kerberos"
+  
+  # Subscription settings
+  subscription_name: "SIEM-Collection"
+  subscription_description: "Windows Event Forwarding to SIEM"
+  
+  # Event channels to collect
+  channels:
+    - name: "Security"
+      query: "*[System[(Level=1 or Level=2 or Level=3 or Level=4)]]"
+    - name: "System"
+      query: "*[System[(Level=1 or Level=2 or Level=3)]]"
+    - name: "Application"
+      query: "*[System[(Level=1 or Level=2)]]"
+  
+  # Advanced settings
+  batch_size: 50
+  max_batch_latency: 30  # seconds
+  read_existing_events: true
+  
+  # Logging
+  log_level: "INFO"
+  log_file: "logs/wec_collector.log"
+  
+  # Performance tuning
+  max_events_per_second: 1000
+  max_queue_size: 10000
+  
+  # Retention settings
+  max_event_age: "7d"
+  max_event_size: "1GB"
+  
+  # Alerting thresholds
+  alert_on_error: true
+  alert_threshold: 10  # Number of consecutive errors before alerting

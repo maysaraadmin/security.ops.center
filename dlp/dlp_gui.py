@@ -9,24 +9,40 @@ import logging
 import queue
 import threading
 import time
+import traceback
+import asyncio
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple, Callable, Coroutine
 from pathlib import Path
 
+# Configure logging before other imports
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('dlp.gui')
+
 # PyQt5 imports
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                            QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
-                            QTreeWidget, QTreeWidgetItem, QHeaderView, QSplitter, 
-                            QTextEdit, QFormLayout, QLineEdit, QGroupBox, QComboBox,
-                            QStatusBar, QAction, QMenu, QToolBar, QStyle, QProgressBar,
-                            QTableWidget, QTableWidgetItem, QCheckBox, QListWidget, QListWidgetItem,
-                            QSpinBox, QDialog, QDialogButtonBox)
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QSize
-from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QTextCursor
+try:
+    from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                                QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
+                                QTreeWidget, QTreeWidgetItem, QHeaderView, QSplitter, 
+                                QTextEdit, QFormLayout, QLineEdit, QGroupBox, QComboBox,
+                                QStatusBar, QAction, QMenu, QToolBar, QStyle, QProgressBar,
+                                QTableWidget, QTableWidgetItem, QCheckBox, QListWidget, QListWidgetItem,
+                                QSpinBox, QDialog, QDialogButtonBox)
+    from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QSize, pyqtSlot, QEventLoop
+    from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QTextCursor
+except ImportError as e:
+    logger.error("Failed to import PyQt5. Please install it with: pip install PyQt5")
+    sys.exit(1)
 
 # Local imports from dlp package
-from .core import DataType, ClassificationResult, DLPScanner
-from .policies import PolicyEngine
+try:
+    from dlp.core import DataType, ClassificationResult, DLPScanner
+    from dlp.policies import PolicyEngine
+except ImportError as e:
+    logger.error("Failed to import DLP modules. Make sure the dlp package is properly installed.")
+    logger.debug(f"Import error details: {str(e)}")
+    logger.debug(f"Python path: {sys.path}")
+    sys.exit(1)
 
 logger = logging.getLogger('dlp.gui')
 
@@ -37,37 +53,116 @@ class ScanWorker(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
     
-    def __init__(self, scanner, paths, recursive=True):
-        super().__init__()
+    def __init__(self, scanner, paths=None, recursive=True, parent=None):
+        super().__init__(parent)
         self.scanner = scanner
-        self.paths = paths
+        self.paths = paths or []
         self.recursive = recursive
         self._is_running = True
+        self._lock = threading.Lock()
+    
+    async def _process_file(self, file_path, total_files, current_index):
+        """Process a single file asynchronously."""
+        try:
+            self.progress.emit(current_index + 1, total_files, file_path)
+            
+            # Create a queue to collect results
+            results_queue = queue.Queue()
+            
+            # Define a callback that will be called when results are ready
+            def on_result(result):
+                results_queue.put(result)
+                self.result_ready.emit(result)
+            
+            # Run the scan for each scanner
+            for scanner in self.scanner.scanners:
+                if not self._is_running:
+                    break
+                
+                try:
+                    # Run the scan
+                    await self.scanner.scan(
+                        [file_path],
+                        callback=on_result,
+                        interactive=False
+                    )
+                    
+                except Exception as e:
+                    error_msg = f"Error scanning {file_path}: {str(e)}"
+                    self.error.emit(error_msg)
+                    logger.error(error_msg, exc_info=True)
+            
+        except Exception as e:
+            error_msg = f"Error processing {file_path}: {str(e)}"
+            self.error.emit(error_msg)
+            logger.error(error_msg, exc_info=True)
     
     def run(self):
         """Run the scan in a separate thread."""
         try:
-            total_files = sum(1 for _ in self.scanner._get_files_to_scan(self.paths, self.recursive))
+            if not self.paths:
+                self.error.emit("No paths specified for scanning")
+                return
             
-            for i, (file_path, content) in enumerate(self.scanner.scan_files(self.paths, self.recursive)):
+            # Get total number of files to scan
+            file_paths = list(self._get_files_to_scan())
+            total_files = len(file_paths)
+            
+            if total_files == 0:
+                self.error.emit("No files found to scan")
+                return
+            
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Process each file
+            tasks = []
+            for i, file_path in enumerate(file_paths):
                 if not self._is_running:
                     break
-                    
-                self.progress.emit(i + 1, total_files, file_path)
                 
-                # Process the file content
-                result = self.scanner.classify_content(content, file_path)
-                if result and result.matches:
-                    self.result_ready.emit(result)
-        
+                # Create a task for each file
+                task = asyncio.ensure_future(self._process_file(file_path, total_files, i))
+                tasks.append(task)
+            
+            # Run all tasks
+            if tasks:
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+            
         except Exception as e:
-            self.error.emit(str(e))
+            error_msg = f"Scan failed: {str(e)}"
+            self.error.emit(error_msg)
+            logger.error(error_msg, exc_info=True)
+            
         finally:
+            # Clean up the event loop
+            try:
+                loop.close()
+            except:
+                pass
+                
             self.finished.emit()
+            
+    def _get_files_to_scan(self):
+        """Generate file paths to scan."""
+        for path in self.paths:
+            path = Path(path)
+            if path.is_file():
+                yield str(path.absolute())
+            elif path.is_dir() and self.recursive:
+                for root, _, files in os.walk(str(path)):
+                    for file in files:
+                        if not self._is_running:
+                            return
+                        file_path = Path(root) / file
+                        if file_path.is_file():
+                            yield str(file_path.absolute())
     
     def stop(self):
-        """Stop the scan."""
-        self._is_running = False
+        """Stop the scan gracefully."""
+        with self._lock:
+            self._is_running = False
 
 class DLPWindow(QMainWindow):
     """Main DLP GUI application window."""
@@ -199,6 +294,30 @@ class DLPWindow(QMainWindow):
         """Set up the scan tab."""
         scan_tab = QWidget()
         layout = QVBoxLayout(scan_tab)
+        
+        # Add scan button
+        button_layout = QHBoxLayout()
+        self.scan_button = QPushButton("Start Scan")
+        self.scan_button.clicked.connect(self.scan_directory)  # Default to directory scan
+        button_layout.addWidget(self.scan_button)
+        
+        # Add stop button
+        self.stop_scan_button = QPushButton("Stop Scan")
+        self.stop_scan_button.setEnabled(False)
+        self.stop_scan_button.clicked.connect(self.stop_scan)
+        button_layout.addWidget(self.stop_scan_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Add progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+        
+        # Add current file label
+        self.current_file_label = QLabel("Ready to scan")
+        layout.addWidget(self.current_file_label)
         
         # Add scan options group
         options_group = QGroupBox("Scan Options")
@@ -408,45 +527,105 @@ class DLPWindow(QMainWindow):
     
     def start_scan(self, paths=None):
         """Start a new scan with the specified paths."""
-        if not paths:
-            QMessageBox.warning(self, "No Paths", "Please select files or directories to scan.")
-            return
-        
-        # Update UI
-        self.stop_scan_action.setEnabled(True)
-        self.progress_bar.setValue(0)
-        self.current_file_label.setText("Starting scan...")
-        self.log_area.clear()
-        self.scan_results = []
-        self.update_results_table()
-        
-        # Get selected file types and other options
-        recursive = self.recursive_checkbox.isChecked()
-        
-        # Create and start the worker thread
-        self.scan_worker = ScanWorker(self.scanner, paths, recursive)
-        self.scan_thread = QThread()
-        
-        # Move worker to thread
-        self.scan_worker.moveToThread(self.scan_thread)
-        
-        # Connect signals
-        self.scan_worker.progress.connect(self.update_scan_progress)
-        self.scan_worker.result_ready.connect(self.handle_scan_result)
-        self.scan_worker.finished.connect(self.scan_finished)
-        self.scan_worker.error.connect(self.scan_error)
-        
-        # Start the thread
-        self.scan_thread.started.connect(self.scan_worker.run)
-        self.scan_thread.start()
-        
-        # Update status
-        self.status_label.setText("Scanning...")
+        try:
+            if paths:
+                self.scan_paths = paths
+                
+            if not self.scan_paths:
+                QMessageBox.warning(self, "No Paths", "No scan paths specified")
+                return
+                
+            # Stop any existing scan
+            self.stop_scan()
+            
+            # Clear previous results
+            self.scan_results = []
+            if hasattr(self, 'results_table'):
+                self.results_table.setRowCount(0)
+            
+            # Get scan options
+            recursive = self.recursive_checkbox.isChecked() if hasattr(self, 'recursive_checkbox') else True
+            
+            # Create and start worker thread
+            self.scan_worker = ScanWorker(self.scanner, self.scan_paths, recursive=recursive)
+            self.scan_thread = QThread()
+            self.scan_worker.moveToThread(self.scan_thread)
+            
+            # Connect signals
+            self.scan_worker.progress.connect(self.update_scan_progress)
+            self.scan_worker.result_ready.connect(self.handle_scan_result)
+            self.scan_worker.finished.connect(self.scan_finished)
+            self.scan_worker.error.connect(self.scan_error)
+            
+            # Clean up thread when done
+            self.scan_worker.finished.connect(self.scan_thread.quit)
+            self.scan_worker.finished.connect(self.scan_worker.deleteLater)
+            self.scan_thread.finished.connect(self.scan_thread.deleteLater)
+            
+            # Start the thread
+            self.scan_thread.started.connect(self.scan_worker.run)
+            self.scan_thread.start()
+            
+            # Update UI
+            self.scan_button.setEnabled(False)
+            self.stop_scan_button.setEnabled(True)
+            if hasattr(self, 'stop_scan_action'):
+                self.stop_scan_action.setEnabled(True)
+                
+            self.progress_bar.setMaximum(100)
+            self.progress_bar.setValue(0)
+            self.status_bar.showMessage("Scanning...")
+            
+        except Exception as e:
+            logger.error("Failed to start scan", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to start scan: {str(e)}")
+            
+            # Reset UI on error
+            self.scan_button.setEnabled(True)
+            self.stop_scan_button.setEnabled(False)
+            if hasattr(self, 'stop_scan_action'):
+                self.stop_scan_action.setEnabled(False)
     
     def stop_scan(self):
-        """Stop the current scan."""
-        if self.scan_worker:
-            self.scan_worker.stop()
+        """Stop the current scan if one is running."""
+        try:
+            if hasattr(self, 'scan_worker') and self.scan_worker is not None:
+                # Signal the worker to stop
+                self.scan_worker.stop()
+                
+                # Wait for the thread to finish with a timeout
+                if hasattr(self, 'scan_thread') and self.scan_thread and self.scan_thread.isRunning():
+                    self.scan_thread.quit()
+                    if not self.scan_thread.wait(2000):  # Wait up to 2 seconds
+                        self.scan_thread.terminate()
+                        self.scan_thread.wait()
+                
+                # Clean up
+                self.scan_worker = None
+                self.scan_thread = None
+            
+            # Update UI
+            if hasattr(self, 'scan_button'):
+                self.scan_button.setEnabled(True)
+            if hasattr(self, 'stop_scan_button'):
+                self.stop_scan_button.setEnabled(False)
+            if hasattr(self, 'stop_scan_action'):
+                self.stop_scan_action.setEnabled(False)
+                
+            self.status_bar.showMessage("Scan stopped")
+            logger.info("Scan stopped by user")
+            
+        except Exception as e:
+            logger.error("Error stopping scan", exc_info=True)
+            self.status_bar.showMessage("Error stopping scan")
+            
+            # Make sure UI is in a consistent state even if there's an error
+            if hasattr(self, 'scan_button'):
+                self.scan_button.setEnabled(True)
+            if hasattr(self, 'stop_scan_button'):
+                self.stop_scan_button.setEnabled(False)
+            if hasattr(self, 'stop_scan_action'):
+                self.stop_scan_action.setEnabled(False)
             self.status_label.setText("Scan stopped by user")
             self.log_message("Scan stopped by user")
     

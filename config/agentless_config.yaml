@@ -1,0 +1,52 @@
+# Agentless Collector Configuration
+
+# Syslog server configuration
+syslog:
+  enabled: true
+  host: "0.0.0.0"
+  port: 514
+  protocol: "udp"  # or "tcp"
+  log_level: "INFO"
+
+# SNMP Trap configuration
+snmp_trap:
+  enabled: true
+  host: "0.0.0.0"
+  port: 162
+  version: "2c"  # "1", "2c", or "3"
+  community: "public"  # for v1/v2c
+  
+  # SNMP v3 settings (if version is "3")
+  username: "user"
+  auth_key: "authpass"
+  priv_key: "privpass"
+
+# Windows Event Forwarding configuration
+windows_event_forwarding:
+  enabled: true
+  host: "localhost"  # Replace with your WEC server hostname or IP
+  port: 5985  # 5986 for HTTPS
+  use_https: false
+  verify_ssl: false  # Set to true in production with valid certificates
+  
+  # Authentication
+  auth_type: "ntlm"  # or "kerberos"
+  username: ""  # Your Windows username
+  password: ""  # Your Windows password
+  domain: ""  # Optional, for NTLM
+  
+  # Query to filter events (WQL syntax)
+  query: |
+    <QueryList>
+      <Query Id="0" Path="Security">
+        <Select Path="Security">*[System[(Level=1 or Level=2 or Level=3 or Level=4)]]</Select>
+      </Query>
+    </QueryList>
+  
+  # Subscription settings
+  subscription_expiry: 60  # minutes
+  
+  # SSL/TLS settings (for HTTPS)
+  # cert_file: "/path/to/cert.pem"
+  # key_file: "/path/to/key.pem"
+  # ca_cert: "/path/to/ca.pem"  # Optional, for custom CA
