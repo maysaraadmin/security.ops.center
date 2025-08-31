@@ -17,9 +17,16 @@ from typing import Dict, List, Optional, Set, Tuple, Any, Callable, Deque
 import json
 from pathlib import Path
 
-from ...models.flow import NetworkFlow, FlowDirection
-from ...models.alert import NetworkAlert, AlertSeverity
-from ...utils.net_utils import is_private_ip, get_service_name
+# Update imports to use absolute paths
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from ndr.models.flow import NetworkFlow, FlowDirection
+from ndr.models.alert import NetworkAlert, AlertSeverity
+from ndr.utils.net_utils import is_private_ip, get_service_name
 
 logger = logging.getLogger('ndr.collector.netflow')
 

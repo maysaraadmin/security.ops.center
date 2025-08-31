@@ -326,6 +326,14 @@ class DetectionEngine(EDRBase):
     def _create_rule(self, rule_data: Dict[str, Any]) -> Optional[DetectionRule]:
         """Create a rule from a dictionary."""
         try:
+            # Handle both 'id' and 'rule_id' fields for backward compatibility
+            if 'id' in rule_data and 'rule_id' not in rule_data:
+                rule_data['rule_id'] = rule_data['id']
+                
+            if 'rule_id' not in rule_data:
+                self.logger.error("Rule is missing required 'rule_id' field")
+                return None
+                
             rule_type = DetectionType(rule_data.get('detection_type', 'signature').lower())
             
             if rule_type == DetectionType.SIGNATURE:
@@ -338,6 +346,8 @@ class DetectionEngine(EDRBase):
                 
         except Exception as e:
             self.logger.error(f"Error creating rule: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return None
     
     def _create_default_rule(self) -> None:

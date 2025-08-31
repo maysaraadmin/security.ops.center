@@ -1,19 +1,25 @@
 """
-EDR GUI Module
+EDR GUI Module (PyQt5 Version)
 
-Provides a graphical interface for the Endpoint Detection and Response system.
-Only uses modules from the edr folder and standard library.
+Provides a PyQt5-based graphical interface for the Endpoint Detection and Response system.
 """
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, scrolledtext
+import sys
+import os
 import logging
+import queue
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-import threading
-import queue
-import os
-import sys
-import json
+
+# PyQt5 imports
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                           QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
+                           QTreeWidget, QTreeWidgetItem, QHeaderView, QSplitter, 
+                           QTextEdit, QFormLayout, QLineEdit, QGroupBox, QComboBox,
+                           QStatusBar, QAction, QMenu, QToolBar, QStyle, QProgressBar,
+                           QTableWidget, QTableWidgetItem, QCheckBox, QListWidget, QListWidgetItem)
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QSize
+from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QTextCursor
 
 # Local imports from edr package
 from . import __version__
@@ -26,43 +32,68 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger('edr.gui')
+logger = logging.getLogger('edr.gui.qt')
 
-class EDRApp:
-    """Main EDR GUI application."""
+class EDRWindow(QMainWindow):
+    """Main EDR application window."""
     
-    def __init__(self, root):
+    def __init__(self):
         """Initialize the EDR GUI."""
-        self.root = root
-        self.root.title(f"Endpoint Detection and Response v{__version__}")
-        self.root.geometry("1200x800")
-        self.root.minsize(1000, 600)
+        super().__init__()
         
-        # Initialize EDR components
-        self.detector = ThreatDetector()
-        self.rule_manager = RuleManager()
-        self.detection_engine = ThreatDetectionEngine()
+        # Initialize logging
+        self.logger = logging.getLogger('edr.gui')
+        self.logger.info("Initializing EDR GUI")
         
         # Data storage
         self.alerts = []
         self.events_queue = queue.Queue()
         self.running = False
         
-        # Setup UI
-        self.setup_ui()
-        
-        # Handle window close
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        try:
+            # Initialize EDR components with error handling
+            self.logger.info("Initializing ThreatDetector...")
+            self.detector = ThreatDetector()
+            
+            self.logger.info("Initializing RuleManager...")
+            self.rule_manager = RuleManager()
+            
+            self.logger.info("Initializing ThreatDetectionEngine...")
+            self.detection_engine = ThreatDetectionEngine()
+            
+            # Setup UI
+            self.setup_ui()
+            
+            # Set window properties
+            self.setWindowTitle(f"Endpoint Detection and Response v{__version__}")
+            self.setGeometry(100, 100, 1200, 800)
+            
+            # Setup status bar
+            self.status_bar = QStatusBar()
+            self.setStatusBar(self.status_bar)
+            self.status_bar.showMessage("Ready")
+            
+            self.logger.info("EDR GUI initialization completed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize EDR GUI: {str(e)}", exc_info=True)
+            QMessageBox.critical(
+                None,
+                "Initialization Error",
+                f"Failed to initialize EDR GUI: {str(e)}\n\nCheck the logs for more details."
+            )
+            sys.exit(1)
     
     def setup_ui(self):
         """Initialize the main UI components."""
-        # Create main container
-        self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        # Create central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
         
-        # Create notebook for tabs
-        self.notebook = ttk.Notebook(self.main_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
         
         # Create tabs
         self.setup_dashboard_tab()
@@ -70,575 +101,248 @@ class EDRApp:
         self.setup_rules_tab()
         self.setup_logs_tab()
         
-        # Status bar
-        self.status_var = tk.StringVar()
-        self.status_bar = ttk.Label(
-            self.main_frame, 
-            textvariable=self.status_var,
-            relief=tk.SUNKEN, 
-            anchor=tk.W
-        )
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        self.update_status("Ready")
+        # Setup menu bar and toolbar
+        self.setup_menu_bar()
+        self.setup_toolbar()
+    
+    def setup_menu_bar(self):
+        """Set up the menu bar."""
+        menubar = self.menuBar()
+        
+        # File menu
+        file_menu = menubar.addMenu("&File")
+        
+        # Actions
+        exit_action = QAction("E&xit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # View menu
+        view_menu = menubar.addMenu("&View")
+        # Add view actions here
+        
+        # Tools menu
+        tools_menu = menubar.addMenu("&Tools")
+        # Add tools actions here
+        
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+        about_action = QAction("&About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+    
+    def setup_toolbar(self):
+        """Set up the toolbar."""
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setIconSize(QSize(16, 16))
+        self.addToolBar(toolbar)
+        
+        # Add toolbar actions
+        start_scan_action = QAction("Start Scan", self)
+        start_scan_action.triggered.connect(self.start_scan)
+        toolbar.addAction(start_scan_action)
+        
+        stop_scan_action = QAction("Stop Scan", self)
+        stop_scan_action.triggered.connect(self.stop_scan)
+        toolbar.addAction(stop_scan_action)
+        
+        toolbar.addSeparator()
+        
+        refresh_action = QAction("Refresh", self)
+        refresh_action.triggered.connect(self.refresh_ui)
+        toolbar.addAction(refresh_action)
     
     def setup_dashboard_tab(self):
-        """Setup the dashboard tab."""
-        self.dashboard_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.dashboard_tab, text="Dashboard")
+        """Set up the dashboard tab."""
+        self.dashboard_tab = QWidget()
+        layout = QVBoxLayout(self.dashboard_tab)
         
-        # Stats frame
-        stats_frame = ttk.LabelFrame(self.dashboard_tab, text="System Status", padding=10)
-        stats_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Stats group
+        stats_group = QGroupBox("System Status")
+        stats_layout = QHBoxLayout()
         
-        # Stats labels
-        stats = [
-            ("Threats Detected:", "0"),
-            ("Active Rules:", str(len(self.rule_manager.rules))),
-            ("System Status:", "Running" if self.running else "Stopped")
-        ]
+        # Stats widgets
+        self.threats_count = QLabel("0")
+        self.rules_count = QLabel(str(len(self.rule_manager.rules)))
+        self.status_label = QLabel("Stopped")
         
-        for i, (label, value) in enumerate(stats):
-            ttk.Label(stats_frame, text=label, font=('Arial', 10, 'bold')).grid(row=0, column=i*2, padx=10, pady=5, sticky=tk.W)
-            ttk.Label(stats_frame, text=value).grid(row=0, column=i*2+1, padx=10, pady=5, sticky=tk.W)
+        # Add stats to layout
+        stats_layout.addWidget(QLabel("Threats Detected:"))
+        stats_layout.addWidget(self.threats_count)
+        stats_layout.addStretch()
         
-        # Controls frame
-        ctrl_frame = ttk.Frame(self.dashboard_tab)
-        ctrl_frame.pack(fill=tk.X, padx=5, pady=5)
+        stats_layout.addWidget(QLabel("Active Rules:"))
+        stats_layout.addWidget(self.rules_count)
+        stats_layout.addStretch()
         
-        # Control buttons
-        self.start_btn = ttk.Button(
-            ctrl_frame,
-            text="Start Monitoring",
-            command=self.start_monitoring,
-            style="Accent.TButton"
-        )
-        self.start_btn.pack(side=tk.LEFT, padx=5)
+        stats_layout.addWidget(QLabel("Status:"))
+        stats_layout.addWidget(self.status_label)
         
-        self.stop_btn = ttk.Button(
-            ctrl_frame,
-            text="Stop Monitoring",
-            command=self.stop_monitoring,
-            state=tk.DISABLED
-        )
-        self.stop_btn.pack(side=tk.LEFT, padx=5)
+        stats_group.setLayout(stats_layout)
+        layout.addWidget(stats_group)
         
-        # Recent alerts frame
-        alerts_frame = ttk.LabelFrame(self.dashboard_tab, text="Recent Alerts", padding=10)
-        alerts_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Add dashboard content here
         
-        # Alerts treeview
-        columns = ("Time", "Severity", "Rule", "Description")
-        self.alerts_tree = ttk.Treeview(
-            alerts_frame,
-            columns=columns,
-            show="headings",
-            selectmode="browse"
-        )
-        
-        # Configure columns
-        col_widths = {"Time": 150, "Severity": 100, "Rule": 200, "Description": 400}
-        for col in columns:
-            self.alerts_tree.heading(col, text=col)
-            self.alerts_tree.column(col, width=col_widths.get(col, 100))
-        
-        # Add scrollbars
-        vsb = ttk.Scrollbar(alerts_frame, orient="vertical", command=self.alerts_tree.yview)
-        hsb = ttk.Scrollbar(alerts_frame, orient="horizontal", command=self.alerts_tree.xview)
-        self.alerts_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        # Grid layout
-        self.alerts_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tab_widget.addTab(self.dashboard_tab, "Dashboard")
     
     def setup_alerts_tab(self):
-        """Setup the alerts tab."""
-        self.alerts_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.alerts_tab, text="Alerts")
+        """Set up the alerts tab."""
+        self.alerts_tab = QWidget()
+        layout = QVBoxLayout(self.alerts_tab)
         
-        # Alerts controls
-        ctrl_frame = ttk.Frame(self.alerts_tab)
-        ctrl_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Alerts table
+        self.alerts_table = QTableWidget()
+        self.alerts_table.setColumnCount(5)
+        self.alerts_table.setHorizontalHeaderLabels(["Time", "Severity", "Source", "Type", "Description"])
+        self.alerts_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
-        # Filter controls
-        ttk.Label(ctrl_frame, text="Filter by:").pack(side=tk.LEFT, padx=5)
-        
-        self.severity_var = tk.StringVar()
-        self.severity_filter = ttk.Combobox(
-            ctrl_frame,
-            textvariable=self.severity_var,
-            values=["All", "Low", "Medium", "High", "Critical"],
-            state="readonly",
-            width=10
-        )
-        self.severity_filter.current(0)
-        self.severity_filter.pack(side=tk.LEFT, padx=5)
-        
-        # Search box
-        self.search_var = tk.StringVar()
-        search_entry = ttk.Entry(ctrl_frame, textvariable=self.search_var, width=40)
-        search_entry.pack(side=tk.LEFT, padx=5)
-        search_entry.bind("<Return>", lambda e: self.filter_alerts())
-        
-        search_btn = ttk.Button(
-            ctrl_frame,
-            text="Search",
-            command=self.filter_alerts
-        )
-        search_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Alerts treeview
-        alerts_frame = ttk.Frame(self.alerts_tab)
-        alerts_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        columns = ("Time", "Severity", "Rule", "Process", "Description")
-        self.all_alerts_tree = ttk.Treeview(
-            alerts_frame,
-            columns=columns,
-            show="headings",
-            selectmode="extended"
-        )
-        
-        # Configure columns
-        col_widths = {
-            "Time": 150,
-            "Severity": 100,
-            "Rule": 200,
-            "Process": 150,
-            "Description": 300
-        }
-        
-        for col in columns:
-            self.all_alerts_tree.heading(col, text=col)
-            self.all_alerts_tree.column(col, width=col_widths.get(col, 100))
-        
-        # Add scrollbars
-        vsb = ttk.Scrollbar(alerts_frame, orient="vertical", command=self.all_alerts_tree.yview)
-        hsb = ttk.Scrollbar(alerts_frame, orient="horizontal", command=self.all_alerts_tree.xview)
-        self.all_alerts_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        # Grid layout
-        self.all_alerts_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # Alert details
-        details_frame = ttk.LabelFrame(self.alerts_tab, text="Alert Details", padding=10)
-        details_frame.pack(fill=tk.BOTH, expand=False, padx=5, pady=5)
-        
-        self.alert_details = scrolledtext.ScrolledText(
-            details_frame,
-            wrap=tk.WORD,
-            height=8,
-            state=tk.DISABLED
-        )
-        self.alert_details.pack(fill=tk.BOTH, expand=True)
-        
-        # Bind selection event
-        self.all_alerts_tree.bind("<<TreeviewSelect>>", self.on_alert_select)
+        layout.addWidget(self.alerts_table)
+        self.tab_widget.addTab(self.alerts_tab, "Alerts")
     
     def setup_rules_tab(self):
-        """Setup the rules management tab."""
-        self.rules_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.rules_tab, text="Rules")
+        """Set up the rules tab."""
+        self.rules_tab = QWidget()
+        layout = QVBoxLayout(self.rules_tab)
         
-        # Rules list frame
-        list_frame = ttk.Frame(self.rules_tab)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Rules treeview
-        columns = ("Enabled", "Name", "Severity", "Description")
-        self.rules_tree = ttk.Treeview(
-            list_frame,
-            columns=columns,
-            show="headings",
-            selectmode="browse"
-        )
-        
-        # Configure columns
-        col_widths = {"Enabled": 60, "Name": 200, "Severity": 100, "Description": 400}
-        for col in columns:
-            self.rules_tree.heading(col, text=col)
-            self.rules_tree.column(col, width=col_widths.get(col, 100))
-        
-        # Add scrollbars
-        vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.rules_tree.yview)
-        hsb = ttk.Scrollbar(list_frame, orient="horizontal", command=self.rules_tree.xview)
-        self.rules_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        # Grid layout
-        self.rules_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # Buttons frame
-        btn_frame = ttk.Frame(self.rules_tab)
-        btn_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        add_btn = ttk.Button(
-            btn_frame,
-            text="Add Rule",
-            command=self.add_rule
-        )
-        add_btn.pack(side=tk.LEFT, padx=5)
-        
-        edit_btn = ttk.Button(
-            btn_frame,
-            text="Edit Rule",
-            command=self.edit_rule
-        )
-        edit_btn.pack(side=tk.LEFT, padx=5)
-        
-        delete_btn = ttk.Button(
-            btn_frame,
-            text="Delete Rule",
-            command=self.delete_rule
-        )
-        delete_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Load rules into the treeview
+        # Rules list
+        self.rules_list = QListWidget()
         self.load_rules()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        add_btn = QPushButton("Add Rule")
+        edit_btn = QPushButton("Edit Rule")
+        delete_btn = QPushButton("Delete Rule")
+        
+        button_layout.addWidget(add_btn)
+        button_layout.addWidget(edit_btn)
+        button_layout.addWidget(delete_btn)
+        
+        layout.addWidget(self.rules_list)
+        layout.addLayout(button_layout)
+        
+        self.tab_widget.addTab(self.rules_tab, "Rules")
     
     def setup_logs_tab(self):
-        """Setup the logs tab."""
-        self.logs_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.logs_tab, text="Logs")
+        """Set up the logs tab."""
+        self.logs_tab = QWidget()
+        layout = QVBoxLayout(self.logs_tab)
         
-        # Logs text widget
-        self.logs_text = scrolledtext.ScrolledText(
-            self.logs_tab,
-            wrap=tk.WORD,
-            state=tk.DISABLED
-        )
+        # Logs text area
+        self.logs_text = QTextEdit()
+        self.logs_text.setReadOnly(True)
+        self.logs_text.setFont(QFont("Monospace", 10))
         
-        # Add scrollbars
-        vsb = ttk.Scrollbar(self.logs_tab, orient="vertical", command=self.logs_text.yview)
-        hsb = ttk.Scrollbar(self.logs_tab, orient="horizontal", command=self.logs_text.xview)
-        self.logs_text.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        # Buttons
+        refresh_btn = QPushButton("Refresh Logs")
+        clear_btn = QPushButton("Clear Logs")
         
-        # Grid layout
-        self.logs_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(refresh_btn)
+        button_layout.addWidget(clear_btn)
         
-        # Log level filter
-        log_frame = ttk.Frame(self.logs_tab)
-        log_frame.pack(fill=tk.X, pady=5)
+        layout.addWidget(self.logs_text)
+        layout.addLayout(button_layout)
         
-        ttk.Label(log_frame, text="Log Level:").pack(side=tk.LEFT, padx=5)
-        
-        self.log_level = tk.StringVar(value="INFO")
-        log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        log_menu = ttk.OptionMenu(
-            log_frame,
-            self.log_level,
-            "INFO",
-            *log_levels,
-            command=self.update_log_level
-        )
-        log_menu.pack(side=tk.LEFT, padx=5)
-        
-        # Log actions
-        clear_btn = ttk.Button(
-            log_frame,
-            text="Clear Logs",
-            command=self.clear_logs
-        )
-        clear_btn.pack(side=tk.RIGHT, padx=5)
-        
-        save_btn = ttk.Button(
-            log_frame,
-            text="Save Logs",
-            command=self.save_logs
-        )
-        save_btn.pack(side=tk.RIGHT, padx=5)
-    
-    def start_monitoring(self):
-        """Start the EDR monitoring."""
-        try:
-            self.log("Starting EDR monitoring...")
-            self.running = True
-            self.start_btn.config(state=tk.DISABLED)
-            self.stop_btn.config(state=tk.NORMAL)
-            
-            # Start monitoring in a separate thread
-            monitor_thread = threading.Thread(
-                target=self.run_monitoring,
-                daemon=True
-            )
-            monitor_thread.start()
-            
-            # Start UI update loop
-            self.update_ui()
-            
-            self.update_status("Monitoring started")
-            self.log("EDR monitoring started successfully")
-            
-        except Exception as e:
-            self.log(f"Error starting monitoring: {e}", logging.ERROR)
-            messagebox.showerror("Error", f"Failed to start monitoring: {e}")
-    
-    def stop_monitoring(self):
-        """Stop the EDR monitoring."""
-        self.running = False
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.update_status("Monitoring stopped")
-        self.log("EDR monitoring stopped")
-    
-    def run_monitoring(self):
-        """Run the EDR monitoring in a background thread."""
-        try:
-            while self.running:
-                # Simulate monitoring
-                # In a real implementation, this would monitor system events
-                time.sleep(1)
-                
-                # Simulate occasional alerts
-                if self.running and time.time() % 10 < 0.1:  # ~every 10 seconds
-                    alert = {
-                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "severity": "Medium",
-                        "rule": "Suspicious Process Detected",
-                        "process": "suspicious.exe",
-                        "description": "A potentially malicious process was detected"
-                    }
-                    self.events_queue.put(("alert", alert))
-                    
-        except Exception as e:
-            self.events_queue.put(("error", str(e)))
-    
-    def update_ui(self):
-        """Update the UI with new events and alerts."""
-        try:
-            while True:
-                try:
-                    event_type, data = self.events_queue.get_nowait()
-                    if event_type == "alert":
-                        self.handle_alert(data)
-                    elif event_type == "error":
-                        self.log(f"Error in monitoring: {data}", logging.ERROR)
-                except queue.Empty:
-                    break
-            
-            # Schedule the next update
-            if self.running:
-                self.root.after(100, self.update_ui)
-                
-        except Exception as e:
-            self.log(f"Error updating UI: {e}", logging.ERROR)
-    
-    def handle_alert(self, alert: Dict[str, Any]):
-        """Handle a new alert."""
-        self.alerts.append(alert)
-        
-        # Add to alerts tree
-        self.all_alerts_tree.insert("", "end", values=(
-            alert["time"],
-            alert["severity"],
-            alert["rule"],
-            alert["process"],
-            alert["description"]
-        ))
-        
-        # Also add to dashboard if it's a high severity alert
-        if alert["severity"] in ["High", "Critical"]:
-            self.alerts_tree.insert("", "end", values=(
-                alert["time"],
-                alert["severity"],
-                alert["rule"],
-                alert["description"]
-            ))
-            
-            # Keep only the last 10 alerts in the dashboard
-            if len(self.alerts_tree.get_children()) > 10:
-                self.alerts_tree.delete(self.alerts_tree.get_children()[0])
-        
-        self.log(f"Alert: {alert['description']}")
-    
-    def filter_alerts(self):
-        """Filter alerts based on search criteria."""
-        search_term = self.search_var.get().lower()
-        severity = self.severity_var.get()
-        
-        # Clear current selection
-        for item in self.all_alerts_tree.get_children():
-            self.all_alerts_tree.delete(item)
-        
-        # Filter and add matching alerts
-        for alert in self.alerts:
-            if (severity == "All" or alert["severity"] == severity) and \
-               (not search_term or 
-                search_term in alert["description"].lower() or
-                search_term in alert["process"].lower() or
-                search_term in alert["rule"].lower()):
-                
-                self.all_alerts_tree.insert("", "end", values=(
-                    alert["time"],
-                    alert["severity"],
-                    alert["rule"],
-                    alert["process"],
-                    alert["description"]
-                ))
-    
-    def on_alert_select(self, event):
-        """Handle alert selection event."""
-        selected = self.all_alerts_tree.selection()
-        if not selected:
-            return
-            
-        # Get the selected alert
-        item = self.all_alerts_tree.item(selected[0])
-        values = item['values']
-        
-        # Display alert details
-        details = f"""Time: {values[0]}
-Severity: {values[1]}
-Rule: {values[2]}
-Process: {values[3]}
-
-Description:
-{values[4]}"""
-        
-        self.alert_details.config(state=tk.NORMAL)
-        self.alert_details.delete(1.0, tk.END)
-        self.alert_details.insert(tk.END, details)
-        self.alert_details.config(state=tk.DISABLED)
+        self.tab_widget.addTab(self.logs_tab, "Logs")
     
     def load_rules(self):
-        """Load rules into the rules treeview."""
-        try:
-            # Clear existing rules
-            for item in self.rules_tree.get_children():
-                self.rules_tree.delete(item)
-            
-            # Add rules from rule manager
-            for rule in self.rule_manager.rules:
-                self.rules_tree.insert("", "end", values=(
-                    "✓" if rule.get("enabled", True) else "✗",
-                    rule.get("name", "Unnamed"),
-                    rule.get("severity", "Medium"),
-                    rule.get("description", "No description")
-                ))
-                
-        except Exception as e:
-            self.log(f"Error loading rules: {e}", logging.ERROR)
+        """Load rules into the rules list."""
+        self.rules_list.clear()
+        for rule in self.rule_manager.rules:
+            self.rules_list.addItem(rule.get('name', 'Unnamed Rule'))
     
-    def add_rule(self):
-        """Add a new rule."""
-        # In a real implementation, this would open a dialog to create a new rule
-        messagebox.showinfo("Info", "Add Rule functionality will be implemented here")
+    def start_scan(self):
+        """Start a new scan."""
+        self.status_bar.showMessage("Scanning...")
+        self.running = True
+        self.status_label.setText("Scanning")
+        # TODO: Implement scan logic
     
-    def edit_rule(self):
-        """Edit the selected rule."""
-        selected = self.rules_tree.selection()
-        if not selected:
-            messagebox.showwarning("Warning", "Please select a rule to edit")
-            return
-            
-        # In a real implementation, this would open a dialog to edit the rule
-        messagebox.showinfo("Info", "Edit Rule functionality will be implemented here")
+    def stop_scan(self):
+        """Stop the current scan."""
+        self.running = False
+        self.status_bar.showMessage("Scan stopped")
+        self.status_label.setText("Stopped")
     
-    def delete_rule(self):
-        """Delete the selected rule."""
-        selected = self.rules_tree.selection()
-        if not selected:
-            messagebox.showwarning("Warning", "Please select a rule to delete")
-            return
-            
-        if messagebox.askyesno("Confirm", "Are you sure you want to delete the selected rule?"):
-            # In a real implementation, this would delete the rule from the rule manager
-            self.rules_tree.delete(selected[0])
-            self.log(f"Deleted rule: {selected[0]}")
+    def refresh_ui(self):
+        """Refresh the UI components."""
+        self.load_rules()
+        self.threats_count.setText(str(len(self.alerts)))
+        self.rules_count.setText(str(len(self.rule_manager.rules)))
     
-    def update_log_level(self, level: str):
-        """Update the log level filter."""
-        logging.getLogger().setLevel(level)
-        self.log(f"Log level set to {level}")
+    def show_about_dialog(self):
+        """Show the about dialog."""
+        QMessageBox.about(self, "About EDR",
+                         f"<h2>Endpoint Detection and Response</h2>"
+                         f"<p>Version: {__version__}</p>"
+                         f"<p>Copyright © 2025 Security Ops Center</p>")
     
-    def clear_logs(self):
-        """Clear the logs."""
-        self.logs_text.config(state=tk.NORMAL)
-        self.logs_text.delete(1.0, tk.END)
-        self.logs_text.config(state=tk.DISABLED)
-    
-    def save_logs(self):
-        """Save logs to a file."""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".log",
-            filetypes=[("Log Files", "*.log"), ("Text Files", "*.txt"), ("All Files", "*.*")]
-        )
-
-        if file_path:
-            try:
-                with open(file_path, 'w') as f:
-                    f.write(self.logs_text.get(1.0, tk.END))
-                
-                self.log(f"Logs saved to {file_path}")
-                messagebox.showinfo("Save Complete", f"Logs saved to {file_path}")
-
-            except Exception as e:
-                self.log(f"Error saving logs: {e}", logging.ERROR)
-                messagebox.showerror("Save Error", f"Failed to save logs: {e}")
-    
-    def log(self, message: str, level: int = logging.INFO):
-        """Log a message to the log window and the console."""
-        logger.log(level, message)
-        
-        # Update log text widget
-        self.logs_text.config(state=tk.NORMAL)
-        self.logs_text.insert(tk.END, f"[{logging.getLevelName(level)}] {message}\n")
-        self.logs_text.see(tk.END)
-        self.logs_text.config(state=tk.DISABLED)
-    
-    def update_status(self, message: str):
-        """Update the status bar."""
-        self.status_var.set(message)
-    
-    def on_closing(self):
+    def closeEvent(self, event):
         """Handle window close event."""
-        if self.running:
-            if messagebox.askokcancel("Quit", "Monitoring is still active. Are you sure you want to quit?"):
-                self.running = False
-                self.root.destroy()
+        # Stop any running scans
+        self.stop_scan()
+        
+        # Ask for confirmation
+        reply = QMessageBox.question(
+            self, 'Confirm Exit',
+            'Are you sure you want to exit?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            event.accept()
         else:
-            self.root.destroy()
+            event.ignore()
 
 def main():
     """Main entry point for the EDR GUI application."""
     try:
-        # Set up the root window
-        root = tk.Tk()
+        # Configure logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler("edr_gui.log")
+            ]
+        )
         
-        # Set theme and styles
-        style = ttk.Style()
-        available_themes = style.theme_names()
-        # Use 'clam' if available, otherwise use the first available theme
-        theme = 'clam' if 'clam' in available_themes else available_themes[0] if available_themes else None
-        if theme:
-            style.theme_use(theme)
+        logger = logging.getLogger('edr')
+        logger.info("Starting EDR GUI application")
         
-        # Set window icon if available
-        try:
-            # Try to set a window icon if available in the edr package
-            icon_path = os.path.join(os.path.dirname(__file__), 'resources', 'edr_icon.ico')
-            if os.path.exists(icon_path):
-                root.iconbitmap(icon_path)
-        except Exception as e:
-            logging.warning(f"Could not set window icon: {e}")
+        # Create the application
+        app = QApplication(sys.argv)
         
-        # Create and run the application
-        app = EDRApp(root)
-        root.protocol("WM_DELETE_WINDOW", app.on_closing)
-        root.mainloop()
+        # Set application style
+        app.setStyle('Fusion')
+        
+        # Create and show the main window
+        window = EDRWindow()
+        window.show()
+        
+        logger.info("EDR GUI started successfully")
+        
+        # Run the application
+        sys.exit(app.exec_())
         
     except Exception as e:
-        logging.critical(f"Fatal error in EDR GUI: {e}", exc_info=True)
-        messagebox.showerror(
-            "Fatal Error",
-            f"A fatal error occurred in the EDR application:\n{str(e)}\n\n"
-            "Please check the logs for more details."
-        )
+        logger = logging.getLogger('edr')
+        logger.critical(f"Fatal error in EDR GUI: {str(e)}", exc_info=True)
+        
+        # Show error message if possible
+        try:
+            app = QApplication.instance() or QApplication(sys.argv)
+            QMessageBox.critical(
+                None,
+                "Fatal Error",
+                f"A fatal error occurred: {str(e)}\n\nCheck the logs for more details."
+            )
+            sys.exit(1)
+        except:
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

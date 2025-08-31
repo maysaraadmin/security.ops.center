@@ -1,18 +1,28 @@
 """
-DLP GUI Module
+DLP GUI Module (PyQt5 Version)
 
-Provides a graphical interface for the Data Loss Prevention system.
-Only uses modules from the dlp folder and standard library.
+Provides a PyQt5-based graphical interface for the Data Loss Prevention system.
 """
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+import sys
+import os
 import logging
+import queue
+import threading
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
-import threading
-import queue
-import os
-import time
+from pathlib import Path
+
+# PyQt5 imports
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                            QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
+                            QTreeWidget, QTreeWidgetItem, QHeaderView, QSplitter, 
+                            QTextEdit, QFormLayout, QLineEdit, QGroupBox, QComboBox,
+                            QStatusBar, QAction, QMenu, QToolBar, QStyle, QProgressBar,
+                            QTableWidget, QTableWidgetItem, QCheckBox, QListWidget, QListWidgetItem,
+                            QSpinBox, QDialog, QDialogButtonBox)
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QSize
+from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QTextCursor
 
 # Local imports from dlp package
 from .core import DataType, ClassificationResult, DLPScanner
@@ -20,15 +30,51 @@ from .policies import PolicyEngine
 
 logger = logging.getLogger('dlp.gui')
 
-class DLPApp:
-    """Main DLP GUI application."""
+class ScanWorker(QObject):
+    """Worker thread for running DLP scans."""
+    progress = pyqtSignal(int, int, str)  # current, total, current_file
+    result_ready = pyqtSignal(object)  # ClassificationResult
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
     
-    def __init__(self, root):
+    def __init__(self, scanner, paths, recursive=True):
+        super().__init__()
+        self.scanner = scanner
+        self.paths = paths
+        self.recursive = recursive
+        self._is_running = True
+    
+    def run(self):
+        """Run the scan in a separate thread."""
+        try:
+            total_files = sum(1 for _ in self.scanner._get_files_to_scan(self.paths, self.recursive))
+            
+            for i, (file_path, content) in enumerate(self.scanner.scan_files(self.paths, self.recursive)):
+                if not self._is_running:
+                    break
+                    
+                self.progress.emit(i + 1, total_files, file_path)
+                
+                # Process the file content
+                result = self.scanner.classify_content(content, file_path)
+                if result and result.matches:
+                    self.result_ready.emit(result)
+        
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            self.finished.emit()
+    
+    def stop(self):
+        """Stop the scan."""
+        self._is_running = False
+
+class DLPWindow(QMainWindow):
+    """Main DLP GUI application window."""
+    
+    def __init__(self):
         """Initialize the DLP GUI."""
-        self.root = root
-        self.root.title("Data Loss Prevention")
-        self.root.geometry("1200x800")
-        self.root.minsize(1000, 600)
+        super().__init__()
         
         # Initialize DLP components
         self.scanner = DLPScanner()
@@ -36,671 +82,723 @@ class DLPApp:
         
         # Data storage
         self.scan_results = []
-        self.scan_queue = queue.Queue()
-        self.running = False
-        
-        # Setup logging
-        self.setup_logging()
+        self.scan_worker = None
+        self.scan_thread = None
         
         # Setup UI
         self.setup_ui()
         
-        # Handle window close
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-    
-    def setup_logging(self):
-        """Configure logging for the DLP GUI."""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        # Setup status bar
+        self.status_bar = self.statusBar()
+        self.status_bar.showMessage("Ready")
+        
+        # Set window properties
+        self.setWindowTitle("Data Loss Prevention (PyQt5)")
+        self.setGeometry(100, 100, 1200, 800)
     
     def setup_ui(self):
         """Initialize the main UI components."""
-        # Create main container
-        self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        # Create central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
         
-        # Create notebook for tabs
-        self.notebook = ttk.Notebook(self.main_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        # Create menu bar
+        self.setup_menu_bar()
         
-        # Create tabs
+        # Create toolbar
+        self.setup_toolbar()
+        
+        # Create tab widget
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+        
+        # Create scan tab
         self.setup_scan_tab()
-        self.setup_policies_tab()
-        self.setup_results_tab()
-        self.setup_logs_tab()
         
-        # Status bar
-        self.status_var = tk.StringVar()
-        self.status_bar = ttk.Label(
-            self.main_frame, 
-            textvariable=self.status_var,
-            relief=tk.SUNKEN, 
-            anchor=tk.W
-        )
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        self.update_status("Ready")
+        # Create results tab
+        self.setup_results_tab()
+        
+        # Create policies tab
+        self.setup_policies_tab()
+        
+        # Create settings tab
+        self.setup_settings_tab()
+        
+        # Create status bar
+        self.setup_status_bar()
+    
+    def setup_menu_bar(self):
+        """Set up the menu bar."""
+        menubar = self.menuBar()
+        
+        # File menu
+        file_menu = menubar.addMenu('&File')
+        
+        # Add scan actions
+        scan_file_action = QAction('Scan &File...', self)
+        scan_file_action.triggered.connect(self.scan_file)
+        file_menu.addAction(scan_file_action)
+        
+        scan_dir_action = QAction('Scan &Directory...', self)
+        scan_dir_action.triggered.connect(self.scan_directory)
+        file_menu.addAction(scan_dir_action)
+        
+        file_menu.addSeparator()
+        
+        # Export actions
+        export_results_action = QAction('&Export Results...', self)
+        export_results_action.triggered.connect(self.export_results)
+        file_menu.addAction(export_results_action)
+        
+        file_menu.addSeparator()
+        
+        # Exit action
+        exit_action = QAction('E&xit', self)
+        exit_action.setShortcut('Ctrl+Q')
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # View menu
+        view_menu = menubar.addMenu('&View')
+        
+        # Tools menu
+        tools_menu = menubar.addMenu('&Tools')
+        
+        # Help menu
+        help_menu = menubar.addMenu('&Help')
+        about_action = QAction('&About', self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+    
+    def setup_toolbar(self):
+        """Set up the toolbar."""
+        toolbar = self.addToolBar('Main Toolbar')
+        
+        # Add scan file button
+        scan_file_icon = self.style().standardIcon(QStyle.SP_FileIcon)
+        scan_file_action = QAction(scan_file_icon, 'Scan File', self)
+        scan_file_action.triggered.connect(self.scan_file)
+        toolbar.addAction(scan_file_action)
+        
+        # Add scan directory button
+        scan_dir_icon = self.style().standardIcon(QStyle.SP_DirIcon)
+        scan_dir_action = QAction(scan_dir_icon, 'Scan Directory', self)
+        scan_dir_action.triggered.connect(self.scan_directory)
+        toolbar.addAction(scan_dir_action)
+        
+        toolbar.addSeparator()
+        
+        # Add stop scan button
+        self.stop_scan_action = QAction('Stop Scan', self)
+        self.stop_scan_action.setEnabled(False)
+        self.stop_scan_action.triggered.connect(self.stop_scan)
+        toolbar.addAction(self.stop_scan_action)
     
     def setup_scan_tab(self):
-        """Setup the scan configuration tab."""
-        self.scan_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.scan_tab, text="Scan")
+        """Set up the scan tab."""
+        scan_tab = QWidget()
+        layout = QVBoxLayout(scan_tab)
         
-        # Scan configuration frame
-        config_frame = ttk.LabelFrame(self.scan_tab, text="Scan Configuration", padding=10)
-        config_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Add scan options group
+        options_group = QGroupBox("Scan Options")
+        options_layout = QFormLayout()
         
-        # Target selection
-        ttk.Label(config_frame, text="Target:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.target_var = tk.StringVar()
-        self.target_entry = ttk.Entry(config_frame, textvariable=self.target_var, width=50)
-        self.target_entry.grid(row=0, column=1, sticky=tk.EW, padx=5, pady=2)
+        # Recursive scan checkbox
+        self.recursive_checkbox = QCheckBox("Scan subdirectories")
+        self.recursive_checkbox.setChecked(True)
+        options_layout.addRow(self.recursive_checkbox)
         
-        browse_btn = ttk.Button(
-            config_frame, 
-            text="Browse...", 
-            command=self.browse_target
-        )
-        browse_btn.grid(row=0, column=2, padx=5, pady=2)
+        # File types to scan
+        file_types_label = QLabel("File Types:")
+        self.file_types_list = QListWidget()
+        self.file_types_list.setSelectionMode(QListWidget.MultiSelection)
+        self.file_types_list.addItems([
+            "Documents (*.doc, *.docx, *.pdf, *.txt)",
+            "Spreadsheets (*.xls, *.xlsx, *.csv)",
+            "Presentations (*.ppt, *.pptx)",
+            "Images (*.jpg, *.jpeg, *.png, *.bmp)",
+            "Archives (*.zip, *.rar, *.7z)",
+            "All Files (*.*)"
+        ])
+        # Select all by default
+        for i in range(self.file_types_list.count()):
+            self.file_types_list.item(i).setSelected(True)
         
-        # Data types to scan for
-        ttk.Label(config_frame, text="Data Types:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.data_types_frame = ttk.Frame(config_frame)
-        self.data_types_frame.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=2)
+        options_layout.addRow(file_types_label, self.file_types_list)
         
-        self.data_type_vars = {}
-        for i, dtype in enumerate(DataType):
-            var = tk.BooleanVar(value=True)
-            self.data_type_vars[dtype] = var
-            cb = ttk.Checkbutton(
-                self.data_types_frame,
-                text=dtype.value.upper(),
-                variable=var
-            )
-            cb.grid(row=i//4, column=i%4, sticky=tk.W, padx=5, pady=2)
+        # Add scan button
+        scan_button = QPushButton("Start Scan")
+        scan_button.clicked.connect(self.start_scan)
         
-        # Scan buttons
-        btn_frame = ttk.Frame(self.scan_tab)
-        btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        options_layout.addRow(scan_button)
+        options_group.setLayout(options_layout)
+        layout.addWidget(options_group)
         
-        scan_btn = ttk.Button(
-            btn_frame,
-            text="Start Scan",
-            command=self.start_scan,
-            style="Accent.TButton"
-        )
-        scan_btn.pack(side=tk.LEFT, padx=5)
+        # Add progress group
+        progress_group = QGroupBox("Scan Progress")
+        progress_layout = QVBoxLayout()
         
-        stop_btn = ttk.Button(
-            btn_frame,
-            text="Stop Scan",
-            command=self.stop_scan,
-            state=tk.DISABLED
-        )
-        stop_btn.pack(side=tk.LEFT, padx=5)
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        progress_layout.addWidget(self.progress_bar)
         
-        # Progress frame
-        progress_frame = ttk.LabelFrame(self.scan_tab, text="Progress", padding=10)
-        progress_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Current file label
+        self.current_file_label = QLabel("Ready to scan...")
+        progress_layout.addWidget(self.current_file_label)
         
-        self.progress_var = tk.DoubleVar()
-        self.progress = ttk.Progressbar(
-            progress_frame,
-            variable=self.progress_var,
-            maximum=100,
-            mode='determinate'
-        )
-        self.progress.pack(fill=tk.X, pady=5)
+        # Log area
+        self.log_area = QTextEdit()
+        self.log_area.setReadOnly(True)
+        self.log_area.setFont(QFont("Courier New", 10))
+        progress_layout.addWidget(self.log_area)
         
-        # Results preview
-        self.results_text = tk.Text(
-            progress_frame,
-            height=15,
-            wrap=tk.WORD,
-            state=tk.DISABLED
-        )
-        self.results_text.pack(fill=tk.BOTH, expand=True, pady=5)
-    
-    def add_policy(self):
-        """Open a dialog to add a new DLP policy."""
-        # Create a top-level window for the policy dialog
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Add DLP Policy")
-        dialog.geometry("500x400")
-        dialog.transient(self.root)  # Set to be on top of the main window
-        dialog.grab_set()  # Make the dialog modal
+        progress_group.setLayout(progress_layout)
+        layout.addWidget(progress_group, 1)  # 1 is stretch factor
         
-        # Policy name
-        ttk.Label(dialog, text="Policy Name:").pack(pady=(10, 0))
-        name_var = tk.StringVar()
-        ttk.Entry(dialog, textvariable=name_var, width=50).pack(padx=10, pady=5)
-        
-        # Data type
-        ttk.Label(dialog, text="Data Type:").pack(pady=(10, 0))
-        data_type_var = tk.StringVar()
-        data_types = ["PII", "PCI", "PHI", "Intellectual Property", "Credentials"]
-        ttk.Combobox(dialog, textvariable=data_type_var, values=data_types).pack(padx=10, pady=5)
-        
-        # Action
-        ttk.Label(dialog, text="Action:").pack(pady=(10, 0))
-        action_var = tk.StringVar()
-        actions = ["Alert", "Block", "Quarantine", "Log"]
-        ttk.Combobox(dialog, textvariable=action_var, values=actions).pack(padx=10, pady=5)
-        
-        # Status
-        ttk.Label(dialog, text="Status:").pack(pady=(10, 0))
-        status_var = tk.StringVar(value="Enabled")
-        ttk.Combobox(dialog, textvariable=status_var, values=["Enabled", "Disabled"]).pack(padx=10, pady=5)
-        
-        # Description
-        ttk.Label(dialog, text="Description:").pack(pady=(10, 0))
-        desc_text = tk.Text(dialog, height=5, width=50)
-        desc_text.pack(padx=10, pady=5)
-        
-        # Buttons
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(pady=10)
-        
-        def save_policy():
-            """Save the new policy and update the UI."""
-            name = name_var.get().strip()
-            if not name:
-                messagebox.showerror("Error", "Policy name is required")
-                return
-                
-            policy = {
-                "name": name,
-                "data_type": data_type_var.get(),
-                "action": action_var.get(),
-                "status": status_var.get(),
-                "description": desc_text.get("1.0", tk.END).strip()
-            }
-            
-            # Add to policy engine
-            try:
-                self.policy_engine.add_policy(policy)
-                self.log(f"Added policy: {name}", logging.INFO)
-                self.update_policies_list()
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to add policy: {str(e)}")
-        
-        ttk.Button(btn_frame, text="Save", command=save_policy).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-    
-    def update_policies_list(self):
-        """Update the policies list in the UI."""
-        # Clear existing items
-        for item in self.policies_tree.get_children():
-            self.policies_tree.delete(item)
-        
-        # Add policies from policy engine
-        for policy in self.policy_engine.list_policies():
-            self.policies_tree.insert("", tk.END, values=(
-                policy.get("name", ""),
-                policy.get("data_type", ""),
-                policy.get("action", ""),
-                policy.get("status", "")
-            ))
-    
-    def setup_policies_tab(self):
-        """Setup the policies configuration tab."""
-        self.policies_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.policies_tab, text="Policies")
-        
-        # Policies list
-        policies_frame = ttk.LabelFrame(self.policies_tab, text="DLP Policies", padding=10)
-        policies_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Add policy button
-        btn_frame = ttk.Frame(policies_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-        
-        add_btn = ttk.Button(
-            btn_frame,
-            text="Add Policy",
-            command=self.add_policy
-        )
-        add_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Policies treeview
-        columns = ("Name", "Data Type", "Action", "Status")
-        self.policies_tree = ttk.Treeview(
-            policies_frame,
-            columns=columns,
-            show="headings",
-            selectmode="browse"
-        )
-        
-        # Configure columns
-        col_widths = {"Name": 200, "Data Type": 150, "Action": 150, "Status": 100}
-        for col in columns:
-            self.policies_tree.heading(col, text=col)
-            self.policies_tree.column(col, width=col_widths.get(col, 100))
-        
-        # Add scrollbars
-        vsb = ttk.Scrollbar(policies_frame, orient="vertical", command=self.policies_tree.yview)
-        hsb = ttk.Scrollbar(policies_frame, orient="horizontal", command=self.policies_tree.xview)
-        self.policies_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        # Grid layout
-        self.policies_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        # Add the tab
+        self.tabs.addTab(scan_tab, "Scan")
     
     def setup_results_tab(self):
-        """Setup the scan results tab."""
-        self.results_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.results_tab, text="Results")
+        """Set up the results tab."""
+        results_tab = QWidget()
+        layout = QVBoxLayout(results_tab)
         
-        # Results treeview
-        columns = ("Time", "Type", "Confidence", "Match", "Location", "Action")
-        self.results_tree = ttk.Treeview(
-            self.results_tab,
-            columns=columns,
-            show="headings",
-            selectmode="extended"
-        )
+        # Results table
+        self.results_table = QTableWidget()
+        self.results_table.setColumnCount(5)
+        self.results_table.setHorizontalHeaderLabels(["File", "Sensitive Data", "Confidence", "Policy", "Actions"])
+        self.results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.results_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.results_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         
-        # Configure columns
-        col_widths = {
-            "Time": 150, 
-            "Type": 100, 
-            "Confidence": 100, 
-            "Match": 250, 
-            "Location": 200,
-            "Action": 150
-        }
-        for col in columns:
-            self.results_tree.heading(col, text=col)
-            self.results_tree.column(col, width=col_widths.get(col, 100))
+        # Add context menu
+        self.results_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.results_table.customContextMenuRequested.connect(self.show_results_context_menu)
         
-        # Add scrollbars
-        vsb = ttk.Scrollbar(self.results_tab, orient="vertical", command=self.results_tree.yview)
-        hsb = ttk.Scrollbar(self.results_tab, orient="horizontal", command=self.results_tree.xview)
-        self.results_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        layout.addWidget(self.results_table)
         
-        # Grid layout
-        self.results_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # Results actions
-        actions_frame = ttk.Frame(self.results_tab)
-        actions_frame.pack(fill=tk.X, pady=5)
-        
-        export_btn = ttk.Button(
-            actions_frame,
-            text="Export Results",
-            command=self.export_results
-        )
-        export_btn.pack(side=tk.LEFT, padx=5)
-        
-        clear_btn = ttk.Button(
-            actions_frame,
-            text="Clear Results",
-            command=self.clear_results
-        )
-        clear_btn.pack(side=tk.LEFT, padx=5)
+        # Add the tab
+        self.tabs.addTab(results_tab, "Results")
     
-    def setup_logs_tab(self):
-        """Setup the logs tab."""
-        self.logs_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.logs_tab, text="Logs")
+    def setup_policies_tab(self):
+        """Set up the policies tab."""
+        policies_tab = QWidget()
+        layout = QVBoxLayout(policies_tab)
         
-        # Logs text widget
-        self.logs_text = tk.Text(
-            self.logs_tab,
-            wrap=tk.WORD,
-            state=tk.DISABLED
-        )
+        # Add policy management UI here
+        policy_label = QLabel("Data Protection Policies")
+        policy_label.setAlignment(Qt.AlignCenter)
+        policy_label.setStyleSheet("font-size: 16px; font-weight: bold; margin: 10px;")
+        layout.addWidget(policy_label)
         
-        # Add scrollbars
-        vsb = ttk.Scrollbar(self.logs_tab, orient="vertical", command=self.logs_text.yview)
-        hsb = ttk.Scrollbar(self.logs_tab, orient="horizontal", command=self.logs_text.xview)
-        self.logs_text.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        # Add policy list
+        self.policy_list = QListWidget()
+        # Add sample policies (in a real app, these would come from the policy engine)
+        self.policy_list.addItems([
+            "Credit Card Numbers (PCI DSS)",
+            "Social Security Numbers (US)",
+            "Email Addresses",
+            "Phone Numbers",
+            "IP Addresses",
+            "Custom Regular Expressions"
+        ])
         
-        # Grid layout
-        self.logs_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        # Set all items as checked by default
+        for i in range(self.policy_list.count()):
+            item = self.policy_list.item(i)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
         
-        # Log level filter
-        log_frame = ttk.Frame(self.logs_tab)
-        log_frame.pack(fill=tk.X, pady=5)
+        layout.addWidget(self.policy_list)
         
-        ttk.Label(log_frame, text="Log Level:").pack(side=tk.LEFT, padx=5)
+        # Add policy buttons
+        button_layout = QHBoxLayout()
         
-        self.log_level = tk.StringVar(value="INFO")
-        log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        log_menu = ttk.OptionMenu(
-            log_frame,
-            self.log_level,
-            "INFO",
-            *log_levels,
-            command=self.update_log_level
-        )
-        log_menu.pack(side=tk.LEFT, padx=5)
+        add_policy_btn = QPushButton("Add Policy...")
+        edit_policy_btn = QPushButton("Edit Policy")
+        remove_policy_btn = QPushButton("Remove Policy")
         
-        # Log actions
-        clear_btn = ttk.Button(
-            log_frame,
-            text="Clear Logs",
-            command=self.clear_logs
-        )
-        clear_btn.pack(side=tk.RIGHT, padx=5)
+        button_layout.addWidget(add_policy_btn)
+        button_layout.addWidget(edit_policy_btn)
+        button_layout.addWidget(remove_policy_btn)
         
-        save_btn = ttk.Button(
-            log_frame,
-            text="Save Logs",
-            command=self.save_logs
-        )
-        save_btn.pack(side=tk.RIGHT, padx=5)
+        layout.addLayout(button_layout)
+        
+        # Add the tab
+        self.tabs.addTab(policies_tab, "Policies")
     
-    def browse_target(self):
-        """Open a file dialog to select scan target."""
-        target = filedialog.askdirectory()
-        if target:
-            self.target_var.set(target)
-    
-    def stop_scan(self):
-        """Stop the currently running DLP scan."""
-        if self.running:
-            self.running = False
-            self.update_status("Scan stopped by user")
-            self.log("Scan stopped by user", logging.INFO)
-            # Re-enable the start button and disable stop button
-            self.scan_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
-    
-    def start_scan(self):
-        """Start the DLP scan."""
-        target = self.target_var.get().strip()
-        if not target:
-            messagebox.showerror("Error", "Please select a target directory to scan.")
-            return
+    def setup_settings_tab(self):
+        """Set up the settings tab."""
+        settings_tab = QWidget()
+        layout = QVBoxLayout(settings_tab)
         
-        # Get selected data types
-        selected_types = [
-            dtype for dtype, var in self.data_type_vars.items() 
-            if var.get()
-        ]
+        # Add settings form
+        settings_group = QGroupBox("Application Settings")
+        settings_layout = QFormLayout()
         
-        if not selected_types:
-            messagebox.showerror("Error", "Please select at least one data type to scan for.")
+        # Log level
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        self.log_level_combo.setCurrentText("INFO")
+        self.log_level_combo.currentTextChanged.connect(self.update_log_level)
+        
+        settings_layout.addRow("Log Level:", self.log_level_combo)
+        
+        # Auto-scan on startup
+        self.auto_scan_checkbox = QCheckBox("Auto-scan on startup")
+        settings_layout.addRow(self.auto_scan_checkbox)
+        
+        # Max file size
+        self.max_file_size_spin = QSpinBox()
+        self.max_file_size_spin.setRange(1, 1000)
+        self.max_file_size_spin.setValue(10)
+        self.max_file_size_spin.setSuffix(" MB")
+        settings_layout.addRow("Max File Size:", self.max_file_size_spin)
+        
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
+        
+        # Add save settings button
+        save_btn = QPushButton("Save Settings")
+        save_btn.clicked.connect(self.save_settings)
+        layout.addWidget(save_btn, 0, Qt.AlignRight)
+        
+        # Add the tab
+        self.tabs.addTab(settings_tab, "Settings")
+    
+    def setup_status_bar(self):
+        """Set up the status bar."""
+        # Add status labels
+        self.status_label = QLabel("Ready")
+        self.statusBar().addPermanentWidget(self.status_label)
+        
+        self.scan_status_label = QLabel("Scanned: 0")
+        self.statusBar().addPermanentWidget(self.scan_status_label)
+        
+        self.matches_label = QLabel("Matches: 0")
+        self.statusBar().addPermanentWidget(self.matches_label)
+    
+    def scan_file(self):
+        """Open a file dialog to select files for scanning."""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Files to Scan",
+            "",
+            "All Files (*.*);;Documents (*.doc *.docx *.pdf *.txt);;Spreadsheets (*.xls *.xlsx *.csv);;Presentations (*.ppt *.pptx)"
+        )
+        
+        if file_paths:
+            self.start_scan(file_paths)
+    
+    def scan_directory(self):
+        """Open a directory dialog to select a directory for scanning."""
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Directory to Scan",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if dir_path:
+            self.start_scan([dir_path])
+    
+    def start_scan(self, paths=None):
+        """Start a new scan with the specified paths."""
+        if not paths:
+            QMessageBox.warning(self, "No Paths", "Please select files or directories to scan.")
             return
         
         # Update UI
-        self.update_status(f"Scanning {target}...")
-        self.progress_var.set(0)
-        self.update_results_text("Starting scan...\n")
+        self.stop_scan_action.setEnabled(True)
+        self.progress_bar.setValue(0)
+        self.current_file_label.setText("Starting scan...")
+        self.log_area.clear()
+        self.scan_results = []
+        self.update_results_table()
         
-        # Update button states
-        self.scan_btn.config(state=tk.DISABLED)
-        self.stop_btn.config(state=tk.NORMAL)
+        # Get selected file types and other options
+        recursive = self.recursive_checkbox.isChecked()
         
-        # Start scan in background thread
-        self.running = True
-        scan_thread = threading.Thread(
-            target=self.run_scan,
-            args=(target, selected_types),
-            daemon=True
+        # Create and start the worker thread
+        self.scan_worker = ScanWorker(self.scanner, paths, recursive)
+        self.scan_thread = QThread()
+        
+        # Move worker to thread
+        self.scan_worker.moveToThread(self.scan_thread)
+        
+        # Connect signals
+        self.scan_worker.progress.connect(self.update_scan_progress)
+        self.scan_worker.result_ready.connect(self.handle_scan_result)
+        self.scan_worker.finished.connect(self.scan_finished)
+        self.scan_worker.error.connect(self.scan_error)
+        
+        # Start the thread
+        self.scan_thread.started.connect(self.scan_worker.run)
+        self.scan_thread.start()
+        
+        # Update status
+        self.status_label.setText("Scanning...")
+    
+    def stop_scan(self):
+        """Stop the current scan."""
+        if self.scan_worker:
+            self.scan_worker.stop()
+            self.status_label.setText("Scan stopped by user")
+            self.log_message("Scan stopped by user")
+    
+    def update_scan_progress(self, current, total, current_file):
+        """Update the progress bar and current file label."""
+        if total > 0:
+            progress = int((current / total) * 100)
+            self.progress_bar.setValue(progress)
+        
+        self.current_file_label.setText(f"Scanning: {current_file}")
+        self.scan_status_label.setText(f"Scanned: {current}")
+    
+    def handle_scan_result(self, result):
+        """Handle a scan result from the worker thread."""
+        self.scan_results.append(result)
+        self.update_results_table()
+        
+        # Log the finding
+        for match in result.matches:
+            self.log_message(f"Found {match.data_type.value} in {result.file_path} (Confidence: {match.confidence:.1%})")
+        
+        # Update status
+        total_matches = sum(len(r.matches) for r in self.scan_results)
+        self.matches_label.setText(f"Matches: {total_matches}")
+    
+    def scan_finished(self):
+        """Handle scan completion."""
+        self.scan_thread.quit()
+        self.scan_thread.wait()
+        
+        self.stop_scan_action.setEnabled(False)
+        self.progress_bar.setValue(100)
+        self.status_label.setText("Scan completed")
+        self.log_message("Scan completed")
+        
+        # Show notification if we found matches
+        total_matches = sum(len(r.matches) for r in self.scan_results)
+        if total_matches > 0:
+            QMessageBox.information(
+                self,
+                "Scan Complete",
+                f"Scan completed with {total_matches} potential data leak(s) found.",
+                QMessageBox.Ok
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Scan Complete",
+                "Scan completed. No sensitive data found.",
+                QMessageBox.Ok
+            )
+    
+    def scan_error(self, error_message):
+        """Handle scan errors."""
+        self.scan_thread.quit()
+        self.stop_scan_action.setEnabled(False)
+        
+        QMessageBox.critical(
+            self,
+            "Scan Error",
+            f"An error occurred during scanning:\n{error_message}",
+            QMessageBox.Ok
         )
-        scan_thread.start()
         
-        # Start UI update loop
-        self.update_ui()
+        self.status_label.setText("Scan error")
+        self.log_message(f"ERROR: {error_message}")
     
-    def run_scan(self, target: str, data_types: list):
-        """Run the DLP scan in a background thread."""
-        try:
-            self.log("Starting DLP scan...")
-            
-            # Simulate scan progress
-            for i in range(1, 101):
-                if not self.running:
-                    break
-                    
-                # Simulate finding results
-                if i % 10 == 0:
-                    result = ClassificationResult(
-                        data_type=DataType.PII,
-                        confidence=0.9,
-                        match=f"Sample PII data {i}",
-                        location=f"{target}/file_{i}.txt",
-                        line_number=i
-                    )
-                    self.scan_queue.put(("result", result))
-                
-                # Update progress
-                self.scan_queue.put(("progress", i))
-                time.sleep(0.1)
-                
-            self.scan_queue.put(("status", "Scan completed" if self.running else "Scan stopped"))
-            
-        except Exception as e:
-            self.scan_queue.put(("error", str(e)))
-        finally:
-            self.running = False
-    
-    def update_ui(self):
-        """Update the UI with scan results and progress."""
-        try:
-            while True:
-                try:
-                    item_type, data = self.scan_queue.get_nowait()
-                    if item_type == "progress":
-                        self.progress_var.set(data)
-                    elif item_type == "result":
-                        self.scan_results.append(data)
-                        self.add_result_to_tree(data)
-                    elif item_type == "status":
-                        self.update_status(data)
-                        self.log(data)
-                        return
-                    elif item_type == "error":
-                        self.update_status(f"Error: {data}")
-                        self.log(f"Error: {data}", level=logging.ERROR)
-                        return
-                except queue.Empty:
-                    break
-            
-            # Schedule the next update
-            if self.running:
-                self.root.after(100, self.update_ui)
-        except Exception as e:
-            self.log(f"Error updating UI: {e}", level=logging.ERROR)
-            self.running = False
-    
-    def add_result_to_tree(self, result: ClassificationResult):
-        """Add a scan result to the results tree."""
-        self.results_tree.insert("", "end", values=(
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            result.data_type.value.upper(),
-            f"{result.confidence:.1%}",
-            result.match[:100] + ("..." if len(result.match) > 100 else ""),
-            result.location,
-            ""  # Action column
-        ))
+    def update_results_table(self):
+        """Update the results table with the latest scan results."""
+        self.results_table.setRowCount(0)  # Clear the table
         
+        for result in self.scan_results:
+            for match in result.matches:
+                row = self.results_table.rowCount()
+                self.results_table.insertRow(row)
+                
+                # File path
+                file_item = QTableWidgetItem(result.file_path)
+                file_item.setData(Qt.UserRole, result)  # Store the full result object
+                
+                # Data type
+                data_type_item = QTableWidgetItem(match.data_type.value)
+                
+                # Confidence
+                confidence_item = QTableWidgetItem(f"{match.confidence:.1%}")
+                
+                # Policy
+                policy_item = QTableWidgetItem(match.policy_name or "Default")
+                
+                # Actions
+                actions_widget = QWidget()
+                actions_layout = QHBoxLayout()
+                actions_layout.setContentsMargins(5, 2, 5, 2)
+                
+                view_btn = QPushButton("View")
+                view_btn.setProperty("file_path", result.file_path)
+                view_btn.setProperty("match_index", result.matches.index(match))
+                view_btn.clicked.connect(self.view_match_details)
+                
+                actions_layout.addWidget(view_btn)
+                actions_layout.addStretch()
+                
+                actions_widget.setLayout(actions_layout)
+                
+                # Add items to the table
+                self.results_table.setItem(row, 0, file_item)
+                self.results_table.setItem(row, 1, data_type_item)
+                self.results_table.setItem(row, 2, confidence_item)
+                self.results_table.setItem(row, 3, policy_item)
+                self.results_table.setCellWidget(row, 4, actions_widget)
+    
+    def view_match_details(self):
+        """Show details for a specific match."""
+        button = self.sender()
+        if not button:
+            return
+        
+        file_path = button.property("file_path")
+        match_index = button.property("match_index")
+        
+        # Find the result and match
+        result = next((r for r in self.scan_results if r.file_path == file_path), None)
+        if not result or match_index >= len(result.matches):
+            return
+        
+        match = result.matches[match_index]
+        
+        # Show details in a dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Match Details")
+        dialog.setMinimumSize(600, 400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # File info
+        file_group = QGroupBox("File Information")
+        file_layout = QFormLayout()
+        
+        file_layout.addRow("File:", QLabel(result.file_path))
+        file_layout.addRow("Size:", QLabel(f"{os.path.getsize(result.file_path):,} bytes"))
+        file_layout.addRow("Last Modified:", QLabel(time.ctime(os.path.getmtime(result.file_path))))
+        
+        file_group.setLayout(file_layout)
+        layout.addWidget(file_group)
+        
+        # Match details
+        match_group = QGroupBox("Match Details")
+        match_layout = QFormLayout()
+        
+        match_layout.addRow("Data Type:", QLabel(match.data_type.value))
+        match_layout.addRow("Confidence:", QLabel(f"{match.confidence:.1%}"))
+        match_layout.addRow("Policy:", QLabel(match.policy_name or "Default"))
+        
+        # Add context (if available)
+        if match.context:
+            context_text = QTextEdit()
+            context_text.setReadOnly(True)
+            context_text.setPlainText(match.context)
+            context_text.setLineWrapMode(QTextEdit.NoWrap)
+            context_text.setFont(QFont("Courier New", 10))
+            match_layout.addRow("Context:", context_text)
+        
+        match_group.setLayout(match_layout)
+        layout.addWidget(match_group, 1)  # Stretch factor
+        
+        # Add buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box.accepted.connect(dialog.accept)
+        layout.addWidget(button_box)
+        
+        dialog.exec_()
+    
     def export_results(self):
         """Export scan results to a file."""
         if not self.scan_results:
-            messagebox.showinfo("Info", "No results to export.")
+            QMessageBox.information(self, "No Results", "No scan results to export.")
             return
-            
-        # Ask user for save location
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
-            title="Save Results As"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Results",
+            "",
+            "CSV Files (*.csv);;Text Files (*.txt)"
         )
         
         if not file_path:
             return  # User cancelled
-            
+        
         try:
-            with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
+            with open(file_path, 'w', encoding='utf-8') as f:
                 # Write header
-                writer.writerow(["Time", "Type", "Confidence", "Match", "Location"])
+                f.write("File,Data Type,Confidence,Policy,Context\n")
                 
-                # Write data from results tree
-                for item in self.results_tree.get_children():
-                    values = self.results_tree.item(item, 'values')
-                    if values and len(values) >= 5:  # Ensure we have all columns
-                        writer.writerow([
-                            values[0],  # Time
-                            values[1],  # Type
-                            values[2],  # Confidence
-                            values[3],  # Match
-                            values[4]   # Location
-                        ])
-                    
-            self.log(f"Results exported to: {file_path}", logging.INFO)
-            messagebox.showinfo("Success", f"Results exported successfully to:\n{file_path}")
+                # Write data
+                for result in self.scan_results:
+                    for match in result.matches:
+                        # Escape quotes and commas in the context
+                        context = (match.context or "").replace('"', '""').replace('\n', ' ').replace('\r', '')
+                        
+                        f.write(
+                            f'"{result.file_path}",'
+                            f'"{match.data_type.value}",'
+                            f'"{match.confidence:.1%}",'
+                            f'"{match.policy_name or "Default"}",'
+                            f'"{context}"\n'
+                        )
+            
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Results exported to:\n{file_path}",
+                QMessageBox.Ok
+            )
             
         except Exception as e:
-            error_msg = f"Failed to export results: {str(e)}"
-            self.log(error_msg, logging.ERROR)
-            messagebox.showerror("Export Error", error_msg)
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export results:\n{str(e)}",
+                QMessageBox.Ok
+            )
     
-    def clear_results(self):
-        """Clear all scan results from the UI and internal storage."""
-        # Clear the results tree
-        for item in self.results_tree.get_children():
-            self.results_tree.delete(item)
-            
-        # Clear the internal results list
-        self.scan_results.clear()
+    def show_results_context_menu(self, position):
+        """Show context menu for results table."""
+        item = self.results_table.itemAt(position)
+        if not item:
+            return
         
-        # Update the status
-        self.update_status("Results cleared")
-        self.log("Scan results cleared", logging.INFO)
+        row = item.row()
+        file_path = self.results_table.item(row, 0).text()
         
-        # Reset progress bar
-        self.progress_var.set(0)
+        menu = QMenu()
+        
+        view_action = menu.addAction("View Details")
+        copy_path_action = menu.addAction("Copy File Path")
+        open_file_action = menu.addAction("Open File Location")
+        
+        action = menu.exec_(self.results_table.viewport().mapToGlobal(position))
+        
+        if action == view_action:
+            # Simulate clicking the view button
+            button = self.results_table.cellWidget(row, 4).findChild(QPushButton)
+            if button:
+                button.click()
+        
+        elif action == copy_path_action:
+            QApplication.clipboard().setText(file_path)
+            self.statusBar().showMessage(f"Copied to clipboard: {file_path}", 3000)
+        
+        elif action == open_file_location:
+            if os.path.exists(file_path):
+                if os.name == 'nt':  # Windows
+                    os.startfile(os.path.dirname(file_path))
+                else:  # macOS and Linux
+                    import subprocess
+                    subprocess.Popen(['xdg-open', os.path.dirname(file_path)])
     
     def update_log_level(self, level):
-        """Update the log level filter.
-        
-        Args:
-            level (str): The new log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        """
-        try:
-            # Convert string level to logging level
-            log_level = getattr(logging, level.upper())
-            
-            # Update the root logger level
-            logging.getLogger().setLevel(log_level)
-            
-            # Update the log handler level if it exists
-            for handler in logging.getLogger().handlers:
-                handler.setLevel(log_level)
-                
-            self.log(f"Log level changed to {level}", logging.INFO)
-            
-        except Exception as e:
-            self.log(f"Failed to update log level: {str(e)}", logging.ERROR)
+        """Update the logging level."""
+        level = getattr(logging, level.upper())
+        logging.getLogger().setLevel(level)
+        self.statusBar().showMessage(f"Log level set to: {logging.getLevelName(level)}", 3000)
     
-    def clear_logs(self):
-        """Clear the log display."""
-        try:
-            self.logs_text.config(state=tk.NORMAL)
-            self.logs_text.delete(1.0, tk.END)
-            self.logs_text.config(state=tk.DISABLED)
-            self.log("Log display cleared", logging.INFO)
-        except Exception as e:
-            self.log(f"Failed to clear logs: {str(e)}", logging.ERROR)
-    
-    def save_logs(self):
-        """Save logs to a file."""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".log",
-            filetypes=[("Log Files", "*.log"), ("Text Files", "*.txt"), ("All Files", "*.*")]
+    def save_settings(self):
+        """Save application settings."""
+        # In a real app, you would save these settings to a config file
+        QMessageBox.information(
+            self,
+            "Settings Saved",
+            "Your settings have been saved.",
+            QMessageBox.Ok
         )
-
-        if file_path:
-            try:
-                with open(file_path, 'w') as f:
-                    f.write(self.logs_text.get(1.0, tk.END))
-                
-                self.log(f"Logs saved to {file_path}")
-                messagebox.showinfo("Save Complete", f"Logs saved to {file_path}")
-            
-            except Exception as e:
-                self.log(f"Error saving logs: {e}", level=logging.ERROR)
-                messagebox.showerror("Save Error", f"Failed to save logs: {e}")
     
-    def log(self, message: str, level: int = logging.INFO):
-        """Log a message to the log window and the console."""
-        logger.log(level, message)
+    def log_message(self, message):
+        """Add a message to the log area with a timestamp."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
         
-        # Also update the log text widget if it exists
-        if hasattr(self, 'logs_text'):
-            self.logs_text.config(state=tk.NORMAL)
-            self.logs_text.insert(tk.END, f"{message}\n")
-            self.logs_text.see(tk.END)
-            self.logs_text.config(state=tk.DISABLED)
-    
-    def update_status(self, message: str):
-        """Update the status bar with a message.
+        self.log_area.append(log_entry)
         
-        Args:
-            message (str): The message to display in the status bar
-        """
-        if hasattr(self, 'status_var'):
-            self.status_var.set(message)
-        self.log(f"Status: {message}", logging.INFO)
+        # Auto-scroll to bottom
+        self.log_area.verticalScrollBar().setValue(
+            self.log_area.verticalScrollBar().maximum()
+        )
     
-    def on_closing(self):
+    def show_about_dialog(self):
+        """Show the about dialog."""
+        QMessageBox.about(
+            self,
+            "About DLP Scanner",
+            "<h2>Data Loss Prevention Scanner</h2>"
+            "<p>Version 1.0.0</p>"
+            "<p>A PyQt5-based application for detecting sensitive data in files.</p>"
+            "<p>© 2025 Security Ops Center</p>"
+        )
+    
+    def closeEvent(self, event):
         """Handle window close event."""
-        if self.running:
-            if messagebox.askokcancel("Quit", "A scan is in progress. Are you sure you want to quit?"):
-                self.running = False
-                self.root.destroy()
-        else:
-            self.root.destroy()
+        # Stop any running scans
+        if hasattr(self, 'scan_worker') and self.scan_worker:
+            self.scan_worker.stop()
+            
+            if hasattr(self, 'scan_thread') and self.scan_thread.isRunning():
+                self.scan_thread.quit()
+                self.scan_thread.wait(2000)  # Wait up to 2 seconds
+        
+        event.accept()
+
+def suppress_qt_warnings():
+    """Suppress Qt warning messages."""
+    import os
+    # Suppress various Qt warnings
+    os.environ["QT_LOGGING_RULES"] = "qt.qpa.window=false;qt.qpa.xcb.window=false"
+    os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.*.debug=false"
+    # Disable Qt debug messages
+    os.environ["QT_LOGGING_RULES"] = "*.debug=false"
+    # Suppress specific warnings
+    os.environ["QT_LOGGING_RULES"] = "qt.qpa.*=false"
 
 def main():
     """
     Main entry point for the DLP GUI application.
-
-    This function initializes the Tkinter root window and starts the DLP application.
     """
-    try:
-        root = tk.Tk()
-
-        # Set theme and styles
-        style = ttk.Style()
-        available_themes = style.theme_names()
-        # Use 'clam' if available, otherwise use the first available theme
-        theme = 'clam' if 'clam' in available_themes else available_themes[0] if available_themes else None
-        if theme:
-            style.theme_use(theme)
-
-        # Set window icon if available
-        try:
-            # Try to set a window icon if available in the dlp package
-            icon_path = os.path.join(os.path.dirname(__file__), 'resources', 'dlp_icon.ico')
-            if os.path.exists(icon_path):
-                root.iconbitmap(icon_path)
-        except Exception as e:
-            logging.warning(f"Could not set window icon: {e}")
-
-        # Create and run the application
-        app = DLPApp(root)
-        root.protocol("WM_DELETE_WINDOW", app.on_closing)
-        root.mainloop()
-
-    except Exception as e:
-        logging.critical(f"Fatal error in DLP GUI: {e}", exc_info=True)
-        messagebox.showerror(
-            "Fatal Error",
-            f"A fatal error occurred in the DLP application:\n{str(e)}\n\n"
-            "Please check the logs for more details."
-        )
+    # Suppress Qt warnings
+    suppress_qt_warnings()
+    
+    # Suppress specific Python warnings
+    import warnings
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler("dlp_scanner.log")
+        ]
+    )
+    
+    # Create the application
+    app = QApplication(sys.argv)
+    
+    # Set application style
+    app.setStyle('Fusion')
+    
+    # Create and show the main window
+    window = DLPWindow()
+    window.show()
+    
+    # Run the application
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()

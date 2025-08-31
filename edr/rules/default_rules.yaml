@@ -1,137 +1,202 @@
-# Default EDR Detection Rules
-
-# Suspicious process execution patterns
-- id: PROC-001
-  name: Suspicious Process Execution
-  description: Detects execution of potentially malicious processes from suspicious locations
-  type: process
-  severity: high
+- name: Suspicious Process Execution
+  description: Detects execution of potentially malicious processes from suspicious
+    locations
+  severity: HIGH
   enabled: true
-  tags: [process, execution, suspicious]
+  tags:
+  - process
+  - execution
+  - suspicious
   condition:
-    process_name: ["powershell.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe"]
-    process_path: ["%TEMP%", "%APPDATA%", "%LOCALAPPDATA%", "\\Windows\\Temp"]
+    process_name:
+    - powershell.exe
+    - cmd.exe
+    - wscript.exe
+    - cscript.exe
+    - mshta.exe
+    process_path:
+    - '%TEMP%'
+    - '%APPDATA%'
+    - '%LOCALAPPDATA%'
+    - \Windows\Temp
   action: alert
-
-- id: PROC-002
-  name: Unusual Parent-Process Relationship
+  rule_id: PROC-001
+  detection_type: signature
+- name: Unusual Parent-Process Relationship
   description: Detects processes with unusual parent-child relationships
-  type: process
-  severity: medium
+  severity: MEDIUM
   enabled: true
-  tags: [process, parent-child, behavior]
+  tags:
+  - process
+  - parent-child
+  - behavior
   condition:
-    parent_process: ["explorer.exe", "iexplore.exe", "chrome.exe", "firefox.exe"]
-    child_process: ["powershell.exe", "cmd.exe", "wscript.exe"]
+    parent_process:
+    - explorer.exe
+    - iexplore.exe
+    - chrome.exe
+    - firefox.exe
+    child_process:
+    - powershell.exe
+    - cmd.exe
+    - wscript.exe
   action: alert
-
-# Network-based detections
-- id: NET-001
-  name: Suspicious Outbound Connection
+  rule_id: PROC-002
+  detection_type: signature
+- name: Suspicious Outbound Connection
   description: Detects outbound connections to known malicious IPs or unusual ports
-  type: network
-  severity: high
+  severity: HIGH
   enabled: true
-  tags: [network, connection, suspicious]
+  tags:
+  - network
+  - connection
+  - suspicious
   condition:
-    remote_ip: ["*.*.*.*"]  # Would be populated with threat intel
-    remote_port: ["4444", "8080", "53"]
-    process_name: ["powershell.exe", "cmd.exe", "wscript.exe"]
+    remote_ip:
+    - '*.*.*.*'
+    remote_port:
+    - '4444'
+    - '8080'
+    - '53'
+    process_name:
+    - powershell.exe
+    - cmd.exe
+    - wscript.exe
   action: block
-
-- id: NET-002
-  name: DNS Tunneling Attempt
+  rule_id: NET-001
+  detection_type: signature
+- name: DNS Tunneling Attempt
   description: Detects potential DNS tunneling activity
-  type: network
-  severity: medium
+  severity: MEDIUM
   enabled: true
-  tags: [network, dns, exfiltration]
+  tags:
+  - network
+  - dns
+  - exfiltration
   condition:
-    protocol: ["udp"]
-    remote_port: ["53"]
-    query_length: "> 100"  # Unusually long DNS queries
+    protocol:
+    - udp
+    remote_port:
+    - '53'
+    query_length: '> 100'
   action: alert
-
-# File system monitoring
-- id: FILE-001
-  name: Suspicious File Creation
+  rule_id: NET-002
+  detection_type: signature
+- name: Suspicious File Creation
   description: Detects creation of potentially malicious files
-  type: file
-  severity: medium
+  severity: MEDIUM
   enabled: true
-  tags: [file, creation, suspicious]
+  tags:
+  - file
+  - creation
+  - suspicious
   condition:
-    file_extension: [".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".ps1", ".psm1"]
-    file_path: ["%TEMP%", "%APPDATA%", "%LOCALAPPDATA%"]
+    file_extension:
+    - .js
+    - .jse
+    - .vbs
+    - .vbe
+    - .wsf
+    - .wsh
+    - .ps1
+    - .psm1
+    file_path:
+    - '%TEMP%'
+    - '%APPDATA%'
+    - '%LOCALAPPDATA%'
   action: quarantine
-
-- id: FILE-002
-  name: System File Modification
+  rule_id: FILE-001
+  detection_type: signature
+- name: System File Modification
   description: Detects unauthorized modification of system files
-  type: file
-  severity: high
+  severity: HIGH
   enabled: true
-  tags: [file, modification, system]
+  tags:
+  - file
+  - modification
+  - system
   condition:
-    file_path: ["%SYSTEMROOT%\\System32", "%SYSTEMROOT%\\SysWOW64"]
-    operation: ["write", "delete"]
+    file_path:
+    - '%SYSTEMROOT%\System32'
+    - '%SYSTEMROOT%\SysWOW64'
+    operation:
+    - write
+    - delete
   action: alert
-
-# Memory-based detections
-- id: MEM-001
-  name: Code Injection Detected
+  rule_id: FILE-002
+  detection_type: signature
+- name: Code Injection Detected
   description: Detects potential code injection into another process
-  type: memory
-  severity: high
+  severity: HIGH
   enabled: true
-  tags: [memory, injection, exploit]
+  tags:
+  - memory
+  - injection
+  - exploit
   condition:
-    source_process: ["*.*"]
-    target_process: ["lsass.exe", "svchost.exe", "explorer.exe"]
-    operation: ["VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread"]
+    source_process:
+    - '*.*'
+    target_process:
+    - lsass.exe
+    - svchost.exe
+    - explorer.exe
+    operation:
+    - VirtualAllocEx
+    - WriteProcessMemory
+    - CreateRemoteThread
   action: terminate
-
-# Registry monitoring
-- id: REG-001
-  name: Persistence Mechanism
+  rule_id: MEM-001
+  detection_type: signature
+- name: Persistence Mechanism
   description: Detects registry modifications used for persistence
-  type: registry
-  severity: high
+  severity: HIGH
   enabled: true
-  tags: [registry, persistence, autorun]
+  tags:
+  - registry
+  - persistence
+  - autorun
   condition:
-    key_path: [
-      "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
-      "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
-      "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
-      "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
-    ]
-    operation: ["create", "set_value"]
+    key_path:
+    - HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+    - HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+    - HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce
+    - HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce
+    operation:
+    - create
+    - set_value
   action: alert
-
-# Behavioral detections
-- id: BEH-001
-  name: Process Hollowing
+  rule_id: REG-001
+  detection_type: signature
+- name: Process Hollowing
   description: Detects potential process hollowing technique
-  type: behavior
-  severity: critical
+  severity: CRITICAL
   enabled: true
-  tags: [behavior, injection, evasion]
+  tags:
+  - behavior
+  - injection
+  - evasion
   condition:
     process_creation: true
-    process_termination: "< 5s"  # Process terminates shortly after creation
+    process_termination: < 5s
     child_process: true
   action: terminate
-
-- id: BEH-002
-  name: Credential Dumping
+  rule_id: BEH-001
+  detection_type: behavioral
+- name: Credential Dumping
   description: Detects potential credential dumping activity
-  type: behavior
-  severity: critical
+  severity: CRITICAL
   enabled: true
-  tags: [behavior, credential_access]
+  tags:
+  - behavior
+  - credential_access
   condition:
-    process_name: ["lsass.exe"]
-    operation: ["OpenProcess", "ReadProcessMemory"]
-    source_process: ["*.*"]
+    process_name:
+    - lsass.exe
+    operation:
+    - OpenProcess
+    - ReadProcessMemory
+    source_process:
+    - '*.*'
   action: terminate
+  rule_id: BEH-002
+  detection_type: behavioral

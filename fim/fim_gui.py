@@ -1,16 +1,24 @@
 """
-FIM GUI Module
+FIM GUI Module (PyQt5 Version)
 
-Provides a graphical interface for the File Integrity Monitoring system.
+Provides a PyQt5-based graphical interface for the File Integrity Monitoring system.
 """
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, scrolledtext
+import sys
+import os
 import logging
+import queue
 from datetime import datetime
 from typing import Dict, List, Optional
-import os
-import queue
-import threading
+from pathlib import Path
+
+# PyQt5 imports
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                            QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox,
+                            QTreeWidget, QTreeWidgetItem, QHeaderView, QSplitter, 
+                            QTextEdit, QFormLayout, QLineEdit, QGroupBox, QComboBox,
+                            QStatusBar, QAction, QMenu, QToolBar, QStyle)
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
+from PyQt5.QtGui import QIcon, QFont, QColor, QPalette
 
 # Local imports
 from .core import FileEvent, EventType
@@ -18,559 +26,503 @@ from .monitors import DirectoryMonitor, FileMonitor
 
 logger = logging.getLogger('fim.gui')
 
-class FIMApp:
-    """Main FIM GUI application."""
+class EventProcessor(QObject):
+    """Worker thread for processing file system events."""
+    event_processed = pyqtSignal(object)  # Signal emitted when an event is processed
     
-    def __init__(self, root):
+    def __init__(self, event_queue):
+        super().__init__()
+        self.event_queue = event_queue
+        self.running = True
+    
+    def process_events(self):
+        """Process events from the queue."""
+        while self.running:
+            try:
+                event = self.event_queue.get(timeout=0.1)
+                self.event_processed.emit(event)
+            except Exception as e:
+                # Timeout is expected when queue is empty
+                if not isinstance(e, queue.Empty):
+                    logger.error(f"Error processing event: {e}")
+    
+    def stop(self):
+        """Stop the event processor."""
+        self.running = False
+
+class FIMWindow(QMainWindow):
+    """Main FIM GUI application window."""
+    
+    def __init__(self):
         """Initialize the FIM GUI."""
-        self.root = root
-        self.root.title("File Integrity Monitor")
-        self.root.geometry("1000x700")
+        super().__init__()
         
         # Initialize FIM components
         self.watchers: Dict[str, DirectoryMonitor | FileMonitor] = {}
         self.events: List[FileEvent] = []
         self.event_queue = queue.Queue()
         self.running = False
+        self.event_processor = None
+        self.processor_thread = None
         
         # Setup UI
         self.setup_ui()
         
+        # Setup status bar
+        self.status_bar = self.statusBar()
+        self.status_bar.showMessage("Ready")
+        
+        # Set window properties
+        self.setWindowTitle("File Integrity Monitor (PyQt5)")
+        self.setGeometry(100, 100, 1200, 800)
+        
         # Start event processing
-        self.process_events()
+        self.start_event_processing()
     
     def setup_ui(self):
         """Initialize the main UI components."""
-        # Main container
-        self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        # Create central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
         
-        # Create notebook for tabs
-        self.notebook = ttk.Notebook(self.main_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        # Create menu bar
+        self.setup_menu_bar()
         
-        # Create tabs
-        self.setup_monitor_tab()
+        # Create toolbar
+        self.setup_toolbar()
+        
+        # Create tab widget
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+        
+        # Create dashboard tab
+        self.setup_dashboard_tab()
+        
+        # Create events tab
         self.setup_events_tab()
         
-        # Status bar
-        self.status_var = tk.StringVar()
-        status_bar = ttk.Label(
-            self.main_frame, 
-            textvariable=self.status_var,
-            relief=tk.SUNKEN, 
-            anchor=tk.W
-        )
-        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        self.update_status("Ready")
+        # Create watchers tab
+        self.setup_watchers_tab()
+        
+        # Create settings tab
+        self.setup_settings_tab()
     
-    def setup_monitor_tab(self):
-        """Setup the monitoring configuration tab."""
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Monitor")
+    def setup_menu_bar(self):
+        """Set up the menu bar."""
+        menubar = self.menuBar()
         
-        # Left panel - Watchers
-        watcher_frame = ttk.LabelFrame(tab, text="Watchers", padding=10)
-        watcher_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # File menu
+        file_menu = menubar.addMenu('&File')
         
-        # Watcher list
-        self.watcher_tree = ttk.Treeview(
-            watcher_frame,
-            columns=("Status", "Path", "Type"),
-            show="headings",
-            selectmode="browse"
-        )
-        self.watcher_tree.heading("Status", text="Status")
-        self.watcher_tree.heading("Path", text="Path")
-        self.watcher_tree.heading("Type", text="Type")
-        self.watcher_tree.column("Status", width=80, anchor=tk.CENTER)
-        self.watcher_tree.column("Path", width=300, anchor=tk.W)
-        self.watcher_tree.column("Type", width=100, anchor=tk.W)
+        # Add actions
+        add_watcher_action = QAction('Add &Watcher', self)
+        add_watcher_action.triggered.connect(self.add_watcher_dialog)
+        file_menu.addAction(add_watcher_action)
         
-        # Add scrollbars
-        vsb = ttk.Scrollbar(watcher_frame, orient="vertical", command=self.watcher_tree.yview)
-        hsb = ttk.Scrollbar(watcher_frame, orient="horizontal", command=self.watcher_tree.xview)
-        self.watcher_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        file_menu.addSeparator()
         
-        # Grid layout
-        self.watcher_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        exit_action = QAction('E&xit', self)
+        exit_action.setShortcut('Ctrl+Q')
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
         
-        # Right panel - Controls
-        control_frame = ttk.Frame(tab, padding=10)
-        control_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=5, pady=5)
+        # View menu
+        view_menu = menubar.addMenu('&View')
         
-        # Add watcher group
-        add_group = ttk.LabelFrame(control_frame, text="Add Watcher", padding=10)
-        add_group.pack(fill=tk.X, pady=(0, 10))
+        # Tools menu
+        tools_menu = menubar.addMenu('&Tools')
         
-        # Path selection
-        ttk.Label(add_group, text="Path:").pack(anchor=tk.W, pady=2)
-        path_frame = ttk.Frame(add_group)
-        path_frame.pack(fill=tk.X, pady=2)
+        # Help menu
+        help_menu = menubar.addMenu('&Help')
+        about_action = QAction('&About', self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
+    
+    def setup_toolbar(self):
+        """Set up the toolbar."""
+        toolbar = self.addToolBar('Main Toolbar')
         
-        self.watch_path_var = tk.StringVar()
-        path_entry = ttk.Entry(path_frame, textvariable=self.watch_path_var, width=30)
-        path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Add watcher button
+        add_watcher_icon = self.style().standardIcon(QStyle.SP_FileDialogNewFolder)
+        add_watcher_action = QAction(add_watcher_icon, 'Add Watcher', self)
+        add_watcher_action.triggered.connect(self.add_watcher_dialog)
+        toolbar.addAction(add_watcher_action)
         
-        ttk.Button(
-            path_frame, 
-            text="Browse...", 
-            command=self.browse_watch_path
-        ).pack(side=tk.LEFT, padx=5)
+        # Start/Stop monitoring button
+        self.monitor_action = QAction('Start Monitoring', self)
+        self.monitor_action.triggered.connect(self.toggle_monitoring)
+        toolbar.addAction(self.monitor_action)
+    
+    def setup_dashboard_tab(self):
+        """Set up the dashboard tab."""
+        dashboard_tab = QWidget()
+        layout = QVBoxLayout(dashboard_tab)
         
-        # Watch type
-        ttk.Label(add_group, text="Type:").pack(anchor=tk.W, pady=2)
-        self.watch_type_var = tk.StringVar(value="directory")
-        ttk.Radiobutton(add_group, text="Directory", variable=self.watch_type_var, value="directory").pack(anchor=tk.W)
-        ttk.Radiobutton(add_group, text="File", variable=self.watch_type_var, value="file").pack(anchor=tk.W)
+        # Add welcome message
+        welcome_label = QLabel("<h1>File Integrity Monitor</h1>")
+        welcome_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(welcome_label)
         
-        # Recursive option
-        self.recursive_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(add_group, text="Watch subdirectories", variable=self.recursive_var).pack(anchor=tk.W, pady=5)
+        # Add status group
+        status_group = QGroupBox("Status")
+        status_layout = QFormLayout()
         
-        # Add button
-        ttk.Button(
-            add_group,
-            text="Add Watcher",
-            command=self.add_watcher,
-            style="Accent.TButton"
-        ).pack(fill=tk.X, pady=(10, 0))
+        self.status_label = QLabel("Not Monitoring")
+        self.watchers_count = QLabel("0")
+        self.events_count = QLabel("0")
         
-        # Watcher actions
-        action_group = ttk.LabelFrame(control_frame, text="Actions", padding=10)
-        action_group.pack(fill=tk.X, pady=5)
+        status_layout.addRow("Status:", self.status_label)
+        status_layout.addRow("Active Watchers:", self.watchers_count)
+        status_layout.addRow("Events Captured:", self.events_count)
         
-        self.start_btn = ttk.Button(
-            action_group,
-            text="Start Monitoring",
-            command=self.start_monitoring,
-            style="Accent.TButton"
-        )
-        self.start_btn.pack(fill=tk.X, pady=2)
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
         
-        self.stop_btn = ttk.Button(
-            action_group,
-            text="Stop Monitoring",
-            command=self.stop_monitoring,
-            state=tk.DISABLED
-        )
-        self.stop_btn.pack(fill=tk.X, pady=2)
+        # Add recent events
+        recent_events_group = QGroupBox("Recent Events")
+        recent_events_layout = QVBoxLayout()
         
-        ttk.Button(
-            action_group,
-            text="Remove Selected",
-            command=self.remove_watcher
-        ).pack(fill=tk.X, pady=2)
+        self.recent_events_table = QTreeWidget()
+        self.recent_events_table.setHeaderLabels(["Time", "Type", "Path", "Details"])
+        self.recent_events_table.setColumnCount(4)
+        self.recent_events_table.header().setSectionResizeMode(QHeaderView.ResizeToContents)
         
-        ttk.Button(
-            action_group,
-            text="Clear All",
-            command=self.clear_watchers
-        ).pack(fill=tk.X, pady=2)
+        recent_events_layout.addWidget(self.recent_events_table)
+        recent_events_group.setLayout(recent_events_layout)
+        layout.addWidget(recent_events_group, 1)  # 1 is stretch factor
+        
+        # Add the tab
+        self.tabs.addTab(dashboard_tab, "Dashboard")
     
     def setup_events_tab(self):
-        """Setup the events tab."""
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Events")
+        """Set up the events tab."""
+        events_tab = QWidget()
+        layout = QVBoxLayout(events_tab)
         
-        # Events filter
-        filter_frame = ttk.Frame(tab)
-        filter_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Add events table
+        self.events_table = QTreeWidget()
+        self.events_table.setHeaderLabels(["Time", "Type", "Path", "Details"])
+        self.events_table.setColumnCount(4)
+        self.events_table.header().setSectionResizeMode(QHeaderView.ResizeToContents)
         
-        ttk.Label(filter_frame, text="Filter:").pack(side=tk.LEFT, padx=5)
+        # Add context menu
+        self.events_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.events_table.customContextMenuRequested.connect(self.show_events_context_menu)
         
-        self.event_filter_var = tk.StringVar()
-        self.event_filter = ttk.Combobox(
-            filter_frame,
-            textvariable=self.event_filter_var,
-            values=["All"] + [e.name for e in EventType],
-            state="readonly"
-        )
-        self.event_filter.current(0)
-        self.event_filter.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        self.event_filter.bind("<<ComboboxSelected>>", self.filter_events)
+        layout.addWidget(self.events_table)
         
-        # Events list
-        columns = ("Time", "Type", "Path", "Details")
-        self.events_tree = ttk.Treeview(
-            tab,
-            columns=columns,
-            show="headings",
-            selectmode="extended"
-        )
-        
-        # Configure columns
-        col_widths = {"Time": 150, "Type": 100, "Path": 300, "Details": 200}
-        for col in columns:
-            self.events_tree.heading(col, text=col)
-            self.events_tree.column(col, width=col_widths.get(col, 100), stretch=True)
-        
-        # Add scrollbars
-        vsb = ttk.Scrollbar(tab, orient="vertical", command=self.events_tree.yview)
-        hsb = ttk.Scrollbar(tab, orient="horizontal", command=self.events_tree.xview)
-        self.events_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        # Grid layout
-        self.events_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # Context menu
-        self.event_menu = tk.Menu(tab, tearoff=0)
-        self.event_menu.add_command(label="View Details", command=self.view_event_details)
-        self.event_menu.add_separator()
-        self.event_menu.add_command(label="Copy Path", command=self.copy_event_path)
-        self.event_menu.add_command(label="Open in Explorer", command=self.open_in_explorer)
-        self.events_tree.bind("<Button-3>", self.show_event_menu)
-        
-        # Actions frame
-        actions_frame = ttk.Frame(tab)
-        actions_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttk.Button(
-            actions_frame,
-            text="Export Events",
-            command=self.export_events
-        ).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(
-            actions_frame,
-            text="Clear Events",
-            command=self.clear_events
-        ).pack(side=tk.LEFT, padx=5)
+        # Add the tab
+        self.tabs.addTab(events_tab, "Events")
     
-    def browse_watch_path(self):
-        """Open a file dialog to select a path to watch."""
-        if self.watch_type_var.get() == "directory":
-            path = filedialog.askdirectory()
-        else:
-            path = filedialog.askopenfilename()
+    def setup_watchers_tab(self):
+        """Set up the watchers tab."""
+        watchers_tab = QWidget()
+        layout = QVBoxLayout(watchers_tab)
         
+        # Add watchers table
+        self.watchers_table = QTreeWidget()
+        self.watchers_table.setHeaderLabels(["Path", "Type", "Status"])
+        self.watchers_table.setColumnCount(3)
+        self.watchers_table.header().setSectionResizeMode(QHeaderView.ResizeToContents)
+        
+        # Add context menu
+        self.watchers_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.watchers_table.customContextMenuRequested.connect(self.show_watchers_context_menu)
+        
+        layout.addWidget(self.watchers_table)
+        
+        # Add the tab
+        self.tabs.addTab(watchers_tab, "Watchers")
+    
+    def setup_settings_tab(self):
+        """Set up the settings tab."""
+        settings_tab = QWidget()
+        layout = QVBoxLayout(settings_tab)
+        
+        # Add settings form
+        settings_group = QGroupBox("Settings")
+        settings_layout = QFormLayout()
+        
+        # Add settings controls here
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        self.log_level_combo.setCurrentText("INFO")
+        self.log_level_combo.currentTextChanged.connect(self.update_log_level)
+        
+        settings_layout.addRow("Log Level:", self.log_level_combo)
+        
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
+        
+        # Add the tab
+        self.tabs.addTab(settings_tab, "Settings")
+    
+    def start_event_processing(self):
+        """Start the event processing thread."""
+        self.event_processor = EventProcessor(self.event_queue)
+        self.event_processor.event_processed.connect(self.handle_file_event)
+        
+        self.processor_thread = QThread()
+        self.event_processor.moveToThread(self.processor_thread)
+        
+        # Connect signals
+        self.processor_thread.started.connect(self.event_processor.process_events)
+        self.processor_thread.finished.connect(self.event_processor.deleteLater)
+        
+        # Start the thread
+        self.processor_thread.start()
+    
+    def stop_event_processing(self):
+        """Stop the event processing thread."""
+        if self.event_processor:
+            self.event_processor.stop()
+        
+        if self.processor_thread and self.processor_thread.isRunning():
+            self.processor_thread.quit()
+            self.processor_thread.wait()
+    
+    def add_watcher_dialog(self):
+        """Show the 'Add Watcher' dialog."""
+        path = QFileDialog.getExistingDirectory(self, "Select Directory to Watch")
         if path:
-            self.watch_path_var.set(path)
+            self.add_watcher(path)
     
-    def add_watcher(self):
-        """Add a new path to watch."""
-        path = self.watch_path_var.get().strip()
-        if not path:
-            messagebox.showerror("Error", "Please select a path to watch.")
-            return
-        
-        if not os.path.exists(path):
-            messagebox.showerror("Error", f"Path does not exist: {path}")
-            return
-        
-        # Check if already watching this path
-        for item in self.watcher_tree.get_children():
-            if self.watcher_tree.item(item, "values")[1] == path:
-                messagebox.showwarning("Warning", f"Already watching path: {path}")
-                return
-        
-        # Add to treeview
-        item_id = self.watcher_tree.insert(
-            "", 
-            tk.END, 
-            values=("Stopped", path, self.watch_type_var.get().capitalize())
-        )
-        
-        # Create watcher
+    def add_watcher(self, path):
+        """Add a new directory or file watcher."""
         try:
-            if self.watch_type_var.get() == "directory":
-                watcher = DirectoryMonitor(
-                    path=path,
-                    recursive=self.recursive_var.get(),
-                    event_handler=self.handle_file_event
-                )
-            else:
-                watcher = FileMonitor(
-                    path=path,
-                    event_handler=self.handle_file_event
-                )
+            path = os.path.normpath(path)
             
-            self.watchers[item_id] = watcher
-            self.log(f"Added watcher for {path}")
-            self.watch_path_var.set("")  # Clear the entry
+            # Check if already watching
+            if path in self.watchers:
+                QMessageBox.information(self, "Already Watching", f"Already watching: {path}")
+                return
+            
+            # Determine if it's a directory or file
+            if os.path.isdir(path):
+                watcher = DirectoryMonitor(path, self.event_queue)
+            else:
+                watcher = FileMonitor(path, self.event_queue)
+            
+            # Start the watcher
+            watcher.start()
+            
+            # Add to watchers dictionary
+            self.watchers[path] = watcher
+            
+            # Update UI
+            self.update_watchers_list()
+            self.status_bar.showMessage(f"Added watcher for: {path}", 3000)
             
         except Exception as e:
-            self.watcher_tree.delete(item_id)
-            messagebox.showerror("Error", f"Failed to add watcher: {e}")
-            self.log(f"Error adding watcher: {e}", logging.ERROR)
+            QMessageBox.critical(self, "Error", f"Failed to add watcher: {e}")
     
-    def remove_watcher(self):
-        """Remove the selected watcher."""
-        selected = self.watcher_tree.selection()
-        if not selected:
-            return
-        
-        for item_id in selected:
-            # Stop the watcher if running
-            if item_id in self.watchers and hasattr(self.watchers[item_id], 'is_running') and self.watchers[item_id].is_running():
-                self.watchers[item_id].stop()
-            
-            # Remove from watchers dict
-            if item_id in self.watchers:
-                del self.watchers[item_id]
-            
-            # Remove from treeview
-            self.watcher_tree.delete(item_id)
-            self.log(f"Removed watcher: {item_id}")
-    
-    def clear_watchers(self):
-        """Remove all watchers."""
-        if not messagebox.askyesno("Confirm", "Remove all watchers?"):
-            return
-        
-        # Stop all watchers
-        for watcher in self.watchers.values():
-            if hasattr(watcher, 'is_running') and watcher.is_running():
+    def remove_watcher(self, path):
+        """Remove a watcher."""
+        try:
+            if path in self.watchers:
+                watcher = self.watchers[path]
                 watcher.stop()
-        
-        # Clear the watchers dict and treeview
-        self.watchers.clear()
-        self.watcher_tree.delete(*self.watcher_tree.get_children())
-        self.log("Cleared all watchers")
+                del self.watchers[path]
+                
+                # Update UI
+                self.update_watchers_list()
+                self.status_bar.showMessage(f"Removed watcher: {path}", 3000)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to remove watcher: {e}")
+    
+    def toggle_monitoring(self):
+        """Toggle monitoring on/off."""
+        if self.running:
+            self.stop_monitoring()
+        else:
+            self.start_monitoring()
     
     def start_monitoring(self):
         """Start all watchers."""
-        if not self.watchers:
-            messagebox.showwarning("Warning", "No watchers configured")
-            return
-        
         try:
-            for item_id, watcher in self.watchers.items():
-                if hasattr(watcher, 'is_running') and not watcher.is_running():
-                    watcher.start()
-                    # Update status in treeview
-                    values = list(self.watcher_tree.item(item_id, "values"))
-                    values[0] = "Running"
-                    self.watcher_tree.item(item_id, values=values)
+            for watcher in self.watchers.values():
+                watcher.start()
             
             self.running = True
-            self.start_btn.config(state=tk.DISABLED)
-            self.stop_btn.config(state=tk.NORMAL)
-            self.update_status("Monitoring started")
-            self.log("Monitoring started")
+            self.monitor_action.setText("Stop Monitoring")
+            self.status_label.setText("<font color='green'>Monitoring</font>")
+            self.status_bar.showMessage("Monitoring started", 3000)
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to start monitoring: {e}")
-            self.log(f"Error starting monitoring: {e}", logging.ERROR)
+            QMessageBox.critical(self, "Error", f"Failed to start monitoring: {e}")
     
     def stop_monitoring(self):
         """Stop all watchers."""
         try:
-            for item_id, watcher in self.watchers.items():
-                if hasattr(watcher, 'is_running') and watcher.is_running():
-                    watcher.stop()
-                    # Update status in treeview
-                    values = list(self.watcher_tree.item(item_id, "values"))
-                    values[0] = "Stopped"
-                    self.watcher_tree.item(item_id, values=values)
+            for watcher in self.watchers.values():
+                watcher.stop()
             
             self.running = False
-            self.start_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
-            self.update_status("Monitoring stopped")
-            self.log("Monitoring stopped")
+            self.monitor_action.setText("Start Monitoring")
+            self.status_label.setText("<font color='red'>Not Monitoring</font>")
+            self.status_bar.showMessage("Monitoring stopped", 3000)
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to stop monitoring: {e}")
-            self.log(f"Error stopping monitoring: {e}", logging.ERROR)
+            QMessageBox.critical(self, "Error", f"Error stopping monitoring: {e}")
     
-    def handle_file_event(self, event: FileEvent):
-        """Handle file system events from watchers."""
-        # Add to event queue for thread-safe UI updates
-        self.event_queue.put(event)
-    
-    def process_events(self):
-        """Process file system events from the queue."""
-        try:
-            while not self.event_queue.empty():
-                event = self.event_queue.get_nowait()
-                self.events.append(event)
-                self.add_event_to_ui(event)
-                self.event_queue.task_done()
-        except queue.Empty:
-            pass
+    def handle_file_event(self, event):
+        """Handle a file system event."""
+        # Add to events list
+        self.events.append(event)
         
-        # Schedule next check
-        self.root.after(100, self.process_events)
+        # Update UI
+        self.update_events_list()
+        self.update_dashboard()
     
-    def add_event_to_ui(self, event: FileEvent):
-        """Add an event to the events treeview."""
-        self.events_tree.insert(
-            "", 
-            0,  # Insert at the top
-            values=(
-                datetime.fromtimestamp(event.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
+    def update_events_list(self):
+        """Update the events list with the latest events."""
+        self.events_table.clear()
+        
+        for event in reversed(self.events[-1000:]):  # Show up to 1000 most recent events
+            item = QTreeWidgetItem([
+                event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 event.event_type.name,
-                event.src_path,
-                f"{event.event_type.name} - {os.path.basename(event.src_path)}"
-            ),
-            tags=(event.event_type.name.lower(),)
-        )
-        
-        # Auto-scroll to show new events
-        self.events_tree.see("")
-    
-    def filter_events(self, event=None):
-        """Filter events based on the selected filter."""
-        filter_type = self.event_filter_var.get()
-        
-        # Clear current items
-        for item in self.events_tree.get_children():
-            self.events_tree.detach(item)
-        
-        # Add filtered items
-        for event in reversed(self.events):
-            if filter_type == "All" or event.event_type.name == filter_type:
-                self.add_event_to_ui(event)
-    
-    def view_event_details(self):
-        """Show details of the selected event."""
-        selected = self.events_tree.selection()
-        if not selected:
-            return
-        
-        # Get the selected event
-        item = selected[0]
-        values = self.events_tree.item(item, "values")
-        
-        # Create a details window
-        details_win = tk.Toplevel(self.root)
-        details_win.title("Event Details")
-        details_win.geometry("600x400")
-        
-        # Create text widget for details
-        text = scrolledtext.ScrolledText(details_win, wrap=tk.WORD)
-        text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Add event details
-        text.insert(tk.END, f"Time: {values[0]}\n")
-        text.insert(tk.END, f"Type: {values[1]}\n")
-        text.insert(tk.END, f"Path: {values[2]}\n")
-        text.insert(tk.END, f"Details: {values[3]}\n")
-        
-        # Disable editing
-        text.config(state=tk.DISABLED)
-        
-        # Add close button
-        btn_frame = ttk.Frame(details_win)
-        btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        ttk.Button(
-            btn_frame,
-            text="Close",
-            command=details_win.destroy
-        ).pack(side=tk.RIGHT)
-    
-    def copy_event_path(self):
-        """Copy the selected event's path to clipboard."""
-        selected = self.events_tree.selection()
-        if not selected:
-            return
-        
-        item = selected[0]
-        path = self.events_tree.item(item, "values")[2]
-        self.root.clipboard_clear()
-        self.root.clipboard_append(path)
-        self.update_status(f"Copied to clipboard: {path}")
-    
-    def open_in_explorer(self):
-        """Open the selected event's path in file explorer."""
-        selected = self.events_tree.selection()
-        if not selected:
-            return
-        
-        item = selected[0]
-        path = self.events_tree.item(item, "values")[2]
-        
-        try:
-            if os.path.isfile(path):
-                # Open the file's directory and select the file
-                os.startfile(os.path.dirname(path))
-            elif os.path.isdir(path):
-                # Open the directory
-                os.startfile(path)
-            else:
-                messagebox.showerror("Error", "File or directory not found")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to open in explorer: {e}")
-    
-    def export_events(self):
-        """Export events to a file."""
-        if not self.events:
-            messagebox.showinfo("Info", "No events to export")
-            return
-        
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[
-                ("CSV Files", "*.csv"),
-                ("Text Files", "*.txt"),
-                ("All Files", "*.*")
-            ]
-        )
-        
-        if not file_path:
-            return
-        
-        try:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                # Write header
-                f.write("Timestamp,Event Type,Path,Details\n")
-                
-                # Write events
-                for event in self.events:
-                    f.write(
-                        f'"{datetime.fromtimestamp(event.timestamp).strftime("%Y-%m-%d %H:%M:%S")}",'
-                        f'"{event.event_type.name}",'
-                        f'"{event.src_path}",'
-                        f'"{event.event_type.name} - {os.path.basename(event.src_path)}"\n'
-                    )
+                event.path,
+                event.details or ""
+            ])
             
-            messagebox.showinfo("Success", f"Exported {len(self.events)} events to {file_path}")
-            self.log(f"Exported events to {file_path}")
+            # Color code by event type
+            if event.event_type == EventType.CREATED:
+                item.setForeground(1, QColor(0, 128, 0))  # Green for created
+            elif event.event_type == EventType.MODIFIED:
+                item.setForeground(1, QColor(0, 0, 255))  # Blue for modified
+            elif event.event_type == EventType.DELETED:
+                item.setForeground(1, QColor(255, 0, 0))  # Red for deleted
             
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export events: {e}")
-            self.log(f"Error exporting events: {e}", logging.ERROR)
+            self.events_table.addTopLevelItem(item)
     
-    def clear_events(self):
-        """Clear all events."""
-        if not self.events:
+    def update_watchers_list(self):
+        """Update the watchers list."""
+        self.watchers_table.clear()
+        
+        for path, watcher in self.watchers.items():
+            watcher_type = "Directory" if isinstance(watcher, DirectoryMonitor) else "File"
+            status = "Running" if watcher.running else "Stopped"
+            
+            item = QTreeWidgetItem([path, watcher_type, status])
+            self.watchers_table.addTopLevelItem(item)
+    
+    def update_dashboard(self):
+        """Update the dashboard with current status."""
+        # Update status
+        status = "<font color='green'>Monitoring</font>" if self.running else "<font color='red'>Not Monitoring</font>"
+        self.status_label.setText(status)
+        
+        # Update counts
+        self.watchers_count.setText(str(len(self.watchers)))
+        self.events_count.setText(str(len(self.events)))
+        
+        # Update recent events (show last 10)
+        self.recent_events_table.clear()
+        for event in reversed(self.events[-10:]):
+            item = QTreeWidgetItem([
+                event.timestamp.strftime("%H:%M:%S"),
+                event.event_type.name,
+                os.path.basename(event.path),
+                event.details or ""
+            ])
+            
+            # Color code by event type (same as in update_events_list)
+            if event.event_type == EventType.CREATED:
+                item.setForeground(1, QColor(0, 128, 0))
+            elif event.event_type == EventType.MODIFIED:
+                item.setForeground(1, QColor(0, 0, 255))
+            elif event.event_type == EventType.DELETED:
+                item.setForeground(1, QColor(255, 0, 0))
+            
+            self.recent_events_table.addTopLevelItem(item)
+    
+    def show_events_context_menu(self, position):
+        """Show context menu for events table."""
+        item = self.events_table.itemAt(position)
+        if not item:
             return
         
-        if messagebox.askyesno("Confirm", "Clear all events?"):
-            self.events.clear()
-            self.events_tree.delete(*self.events_tree.get_children())
-            self.log("Cleared all events")
+        menu = QMenu()
+        
+        copy_action = menu.addAction("Copy Path")
+        open_action = menu.addAction("Open in File Explorer")
+        
+        action = menu.exec_(self.events_table.viewport().mapToGlobal(position))
+        
+        if action == copy_action:
+            path = item.text(2)  # Path is in column 2
+            QApplication.clipboard().setText(path)
+            self.status_bar.showMessage(f"Copied to clipboard: {path}", 2000)
+            
+        elif action == open_action:
+            path = item.text(2)  # Path is in column 2
+            if os.path.exists(path):
+                if os.name == 'nt':  # Windows
+                    os.startfile(os.path.dirname(path))
+                else:  # macOS and Linux
+                    import subprocess
+                    subprocess.Popen(['xdg-open', os.path.dirname(path)])
     
-    def show_event_menu(self, event):
-        """Show the context menu for events."""
-        item = self.events_tree.identify_row(event.y)
-        if item:
-            self.events_tree.selection_set(item)
-            self.event_menu.post(event.x_root, event.y)
+    def show_watchers_context_menu(self, position):
+        """Show context menu for watchers table."""
+        item = self.watchers_table.itemAt(position)
+        if not item:
+            return
+        
+        path = item.text(0)  # Path is in column 0
+        
+        menu = QMenu()
+        
+        remove_action = menu.addAction("Remove Watcher")
+        open_action = menu.addAction("Open in File Explorer")
+        
+        action = menu.exec_(self.watchers_table.viewport().mapToGlobal(position))
+        
+        if action == remove_action:
+            self.remove_watcher(path)
+        elif action == open_action:
+            if os.path.exists(path):
+                if os.name == 'nt':  # Windows
+                    os.startfile(os.path.dirname(path) if os.path.isfile(path) else path)
+                else:  # macOS and Linux
+                    import subprocess
+                    subprocess.Popen(['xdg-open', os.path.dirname(path) if os.path.isfile(path) else path])
     
-    def update_status(self, message: str):
-        """Update the status bar."""
-        self.status_var.set(message)
-        self.log(message)
+    def update_log_level(self, level):
+        """Update the logging level."""
+        level = getattr(logging, level.upper())
+        logging.getLogger().setLevel(level)
+        self.status_bar.showMessage(f"Log level set to: {logging.getLevelName(level)}", 3000)
     
-    def log(self, message: str, level=logging.INFO):
-        """Log a message to the console."""
-        logger.log(level, message)
+    def show_about_dialog(self):
+        """Show the about dialog."""
+        QMessageBox.about(self, "About FIM",
+                         "<h2>File Integrity Monitor</h2>"
+                         "<p>Version 1.0.0</p>"
+                         "<p>A PyQt5-based file integrity monitoring tool.</p>")
     
-    def on_closing(self):
+    def closeEvent(self, event):
         """Handle window close event."""
         if self.running:
-            if messagebox.askokcancel("Quit", "Monitoring is active. Are you sure you want to quit?"):
+            reply = QMessageBox.question(
+                self, 'Quit',
+                'Monitoring is active. Are you sure you want to quit?',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
                 self.stop_monitoring()
-                self.root.destroy()
+                self.stop_event_processing()
+                event.accept()
+            else:
+                event.ignore()
         else:
-            self.root.destroy()
+            self.stop_event_processing()
+            event.accept()
 
 def main():
     """Main entry point for the FIM GUI application."""
@@ -580,10 +532,18 @@ def main():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # Create and run the application
-    root = tk.Tk()
-    app = FIMApp(root)
-    root.mainloop()
+    # Create the application
+    app = QApplication(sys.argv)
+    
+    # Set application style
+    app.setStyle('Fusion')
+    
+    # Create and show the main window
+    window = FIMWindow()
+    window.show()
+    
+    # Run the application
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()

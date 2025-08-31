@@ -1,47 +1,224 @@
+
 """
 Network Detection and Response (NDR) GUI
 
 Provides a graphical interface for monitoring and responding to network threats.
 """
-import tkinter as tk
-from tkinter import ttk, messagebox
-import threading
-import queue
+import sys
 import logging
+import queue
+import threading
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
+# PyQt5 imports
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
+                            QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem, QHeaderView, QPushButton,
+                            QStatusBar, QMessageBox, QSplitter, QGroupBox, QFormLayout, QComboBox, QMenu)
+from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal, QObject
+from PyQt5.QtGui import QIcon, QColor, QFont, QPalette
+
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import flow collector and analyzer
+from ndr.collectors.netflow_collector import NetFlowCollector
+from ndr.analyzers.traffic_analyzer import TrafficAnalyzer
 
 # Local imports
 from ndr.models.flow import NetworkFlow
 from ndr.models.alert import NetworkAlert, AlertSeverity
-from ndr.collector import NetworkCollector
-from ndr.analyzer import TrafficAnalyzer
 
-class NDREvent:
-    """Container for NDR events and updates."""
-    def __init__(self, event_type: str, data: Any):
-        self.event_type = event_type
-        self.data = data
-        self.timestamp = datetime.now()
+class WorkerSignals(QObject):
+    """Defines the signals available from a running worker thread."""
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+    progress = pyqtSignal(int)
 
-class NDRGUI:
-    """Main NDR GUI application."""
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Network Detection & Response")
-        self.root.geometry("1200x800")
-        self.root.minsize(1000, 600)
+
+class FlowCollectorWorker(QThread):
+    """Worker thread for collecting network flows."""
+    flow_collected = pyqtSignal(dict)
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, collector):
+        super().__init__()
+        self.collector = collector
+        self.running = True
+    
+    def run(self):
+        """Collect network flows."""
+        try:
+            self.collector.start()
+            while self.running:
+                flows = self.collector.get_recent_flows()
+                for flow in flows:
+                    if not self.running:
+                        break
+                    self.flow_collected.emit(flow)
+                self.msleep(1000)  # Sleep for 1 second
+        except Exception as e:
+            self.error_occurred.emit(f"Flow collection error: {str(e)}")
+    
+    def stop(self):
+        """Stop the worker thread."""
+        self.running = False
+        self.wait()
+
+
+class TrafficAnalyzerWorker(QThread):
+    """Worker thread for analyzing network traffic."""
+    alert_detected = pyqtSignal(dict)
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, collector, analyzer):
+        super().__init__()
+        self.collector = collector
+        self.analyzer = analyzer
+        self.running = True
+    
+    def run(self):
+        """Analyze network flows for threats."""
+        try:
+            while self.running:
+                flows = self.collector.get_recent_flows()
+                alerts = self.analyzer.analyze_flows(flows)
+                for alert in alerts:
+                    if not self.running:
+                        break
+                    self.alert_detected.emit(alert)
+                self.msleep(1000)  # Sleep for 1 second
+        except Exception as e:
+            self.error_occurred.emit(f"Traffic analysis error: {str(e)}")
+    
+    def stop(self):
+        """Stop the worker thread."""
+        self.running = False
+        self.wait()
+
+
+class FlowCollectorWorker(QObject):
+    """Worker thread for collecting network flows."""
+    flow_collected = pyqtSignal(dict)
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, flow_collector):
+        super().__init__()
+        self.flow_collector = flow_collector
+        self.running = False
+    
+    def start(self):
+        """Start the worker thread."""
+        self.running = True
+        self.flow_collector.start()
+    
+    def stop(self):
+        """Stop the worker thread."""
+        self.running = False
+        if hasattr(self.flow_collector, 'stop'):
+            self.flow_collector.stop()
+    
+    def run(self):
+        """Main worker loop."""
+        try:
+            while self.running:
+                try:
+                    # Get new flows from collector
+                    flows = self.flow_collector.get_recent_flows()
+                    for flow in flows:
+                        if not self.running:
+                            break
+                        self.flow_collected.emit(flow)
+                    
+                    # Small delay to prevent high CPU usage
+                    QApplication.processEvents()
+                    QThread.msleep(100)
+                    
+                except Exception as e:
+                    self.error_occurred.emit(f"Error in flow collection: {e}")
+                    break
+        except Exception as e:
+            self.error_occurred.emit(f"Fatal error in flow collector: {e}")
+
+
+class TrafficAnalyzerWorker(QObject):
+    """Worker thread for analyzing network traffic."""
+    alert_detected = pyqtSignal(dict)
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, flow_collector, traffic_analyzer):
+        super().__init__()
+        self.flow_collector = flow_collector
+        self.traffic_analyzer = traffic_analyzer
+        self.running = False
+    
+    def start(self):
+        """Start the worker thread."""
+        self.running = True
+    
+    def stop(self):
+        """Stop the worker thread."""
+        self.running = False
+    
+    def run(self):
+        """Main worker loop."""
+        try:
+            while self.running:
+                try:
+                    # Get recent flows and analyze them
+                    flows = self.flow_collector.get_recent_flows()
+                    alerts = self.traffic_analyzer.analyze_flows(flows)
+                    
+                    # Emit alerts
+                    for alert in alerts:
+                        if not self.running:
+                            break
+                        self.alert_detected.emit(alert)
+                    
+                    # Small delay to prevent high CPU usage
+                    QApplication.processEvents()
+                    QThread.msleep(1000)  # Analyze every second
+                    
+                except Exception as e:
+                    self.error_occurred.emit(f"Error in traffic analysis: {e}")
+                    break
+        except Exception as e:
+            self.error_occurred.emit(f"Fatal error in traffic analyzer: {e}")
+
+
+class NDRGUI(QMainWindow):
+    """Main NDR GUI application using PyQt5."""
+    
+    def __init__(self):
+        super().__init__()
         
         # Initialize components
-        self.flow_collector = NetworkCollector()
-        self.traffic_analyzer = TrafficAnalyzer()
+        self.flow_collector = None
+        self.traffic_analyzer = None
+        self.flow_worker = None
+        self.analysis_worker = None
+        self.flow_thread = None
+        self.analysis_thread = None
+        
+        try:
+            # Initialize with default configuration
+            self.flow_collector = NetFlowCollector()
+            self.traffic_analyzer = TrafficAnalyzer()
+        except Exception as e:
+            print(f"Error initializing components: {e}", file=sys.stderr)
+            self.flow_collector = None
+            self.traffic_analyzer = None
         
         # Event queue for thread-safe UI updates
         self.event_queue = queue.Queue()
         
         # Data storage
-        self.flows: List[NetworkFlow] = []
-        self.alerts: List[NetworkAlert] = []
+        self.flows: List[dict] = []
+        self.alerts: List[dict] = []
         self.flow_stats = {
             'total_flows': 0,
             'total_bytes': 0,
@@ -59,8 +236,25 @@ class NDRGUI:
         self.running = True
         self.start_background_tasks()
         
-        # Handle window close
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Set window properties
+        self.setWindowTitle("Network Detection & Response")
+        self.setMinimumSize(1000, 600)
+        self.resize(1200, 800)
+        
+        # Center the window
+        self.center_window()
+        
+        # Setup timer for UI updates
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_ui)
+        self.update_timer.start(1000)  # Update UI every second
+    
+    def center_window(self):
+        """Center the window on the screen."""
+        frame_geometry = self.frameGeometry()
+        center_point = QApplication.desktop().availableGeometry().center()
+        frame_geometry.moveCenter(center_point)
+        self.move(frame_geometry.topLeft())
     
     def setup_logging(self):
         """Configure logging for the NDR GUI."""
@@ -90,13 +284,18 @@ class NDRGUI:
     
     def setup_ui(self):
         """Initialize the main UI components."""
-        # Main container
-        main_container = ttk.Frame(self.root, padding="5")
-        main_container.pack(fill=tk.BOTH, expand=True)
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
         
-        # Create notebook for tabs
-        self.notebook = ttk.Notebook(main_container)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(5)
+        
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
         
         # Create tabs
         self.setup_dashboard_tab()
@@ -104,236 +303,309 @@ class NDRGUI:
         self.setup_alerts_tab()
         
         # Status bar
-        self.status_var = tk.StringVar()
-        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
         self.update_status("Ready")
+        
+        # Set style
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f0f0;
+            }
+            QTabWidget::pane {
+                border: 1px solid #c4c4c4;
+                border-radius: 4px;
+                margin: 0px;
+                padding: 0px;
+            }
+            QTabBar::tab {
+                background: #e0e0e0;
+                border: 1px solid #c4c4c4;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                min-width: 100px;
+                padding: 5px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background: #f0f0f0;
+                border-bottom: 1px solid #f0f0f0;
+                margin-bottom: -1px;
+            }
+            QTreeWidget {
+                border: 1px solid #c4c4c4;
+                border-radius: 4px;
+                background: white;
+                alternate-background-color: #f8f8f8;
+            }
+            QTreeWidget::item:selected {
+                background: #4a90e2;
+                color: white;
+            }
+            QGroupBox {
+                border: 1px solid #c4c4c4;
+                border-radius: 4px;
+                margin-top: 1em;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px;
+            }
+        """)
     
     def setup_dashboard_tab(self):
         """Setup the dashboard tab with overview metrics."""
-        self.dashboard_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.dashboard_tab, text="Dashboard")
+        self.dashboard_tab = QWidget()
+        self.tab_widget.addTab(self.dashboard_tab, "Dashboard")
         
-        # Stats frame
-        stats_frame = ttk.LabelFrame(self.dashboard_tab, text="Network Statistics", padding=10)
-        stats_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Main layout
+        layout = QVBoxLayout(self.dashboard_tab)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        
+        # Stats group box
+        stats_group = QGroupBox("Network Statistics")
+        stats_layout = QFormLayout()
+        stats_group.setLayout(stats_layout)
         
         # Stats display
         self.stats_vars = {
-            'total_flows': tk.StringVar(value="0"),
-            'total_bytes': tk.StringVar(value="0 B"),
-            'alerts_count': tk.StringVar(value="0"),
-            'top_protocol': tk.StringVar(value="N/A")
+            'total_flows': QLabel("0"),
+            'total_bytes': QLabel("0 B"),
+            'alerts_count': QLabel("0"),
+            'top_protocol': QLabel("N/A")
         }
         
-        # Layout stats
-        ttk.Label(stats_frame, text="Total Flows:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(stats_frame, textvariable=self.stats_vars['total_flows']).grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        # Set alert count to red
+        self.stats_vars['alerts_count'].setStyleSheet("color: red;")
         
-        ttk.Label(stats_frame, text="Total Data:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(stats_frame, textvariable=self.stats_vars['total_bytes']).grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        # Add stats to layout
+        stats_layout.addRow("Total Flows:", self.stats_vars['total_flows'])
+        stats_layout.addRow("Total Data:", self.stats_vars['total_bytes'])
+        stats_layout.addRow("Active Alerts:", self.stats_vars['alerts_count'])
+        stats_layout.addRow("Top Protocol:", self.stats_vars['top_protocol'])
         
-        ttk.Label(stats_frame, text="Active Alerts:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(stats_frame, textvariable=self.stats_vars['alerts_count'], foreground="red").grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        # Add stats group to main layout
+        layout.addWidget(stats_group)
         
-        ttk.Label(stats_frame, text="Top Protocol:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(stats_frame, textvariable=self.stats_vars['top_protocol']).grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        # Add stretch to push everything to the top
+        layout.addStretch()
     
     def setup_flows_tab(self):
         """Setup the network flows tab."""
-        self.flows_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.flows_tab, text="Network Flows")
+        self.flows_tab = QWidget()
+        self.tab_widget.addTab(self.flows_tab, "Network Flows")
+        
+        # Main layout
+        layout = QVBoxLayout(self.flows_tab)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
         
         # Search frame
-        search_frame = ttk.Frame(self.flows_tab)
-        search_frame.pack(fill=tk.X, padx=5, pady=5)
+        search_frame = QHBoxLayout()
+        layout.addLayout(search_frame)
         
-        ttk.Label(search_frame, text="Filter:").pack(side=tk.LEFT, padx=5)
-        self.flow_filter_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=self.flow_filter_var, width=50)
-        search_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        search_entry.bind("<Return>", lambda e: self.filter_flows())
+        search_label = QLabel("Filter:")
+        search_frame.addWidget(search_label)
+        
+        self.flow_filter_edit = QLineEdit()
+        self.flow_filter_edit.setPlaceholderText("Filter flows...")
+        self.flow_filter_edit.returnPressed.connect(self.filter_flows)
+        search_frame.addWidget(self.flow_filter_edit)
         
         # Flows treeview
-        columns = ("Time", "Source IP", "Source Port", "→", "Destination IP", "Destination Port", "Protocol", "Bytes")
-        self.flows_tree = ttk.Treeview(
-            self.flows_tab, 
-            columns=columns, 
-            show="headings",
-            selectmode="extended"
-        )
+        self.flows_tree = QTreeWidget()
+        self.flows_tree.setAlternatingRowColors(True)
+        self.flows_tree.setSelectionBehavior(QTreeWidget.SelectRows)
+        self.flows_tree.setSelectionMode(QTreeWidget.ExtendedSelection)
+        self.flows_tree.setSortingEnabled(True)
+        self.flows_tree.setAnimated(True)
         
-        # Configure columns
+        # Set up columns
+        columns = ["Time", "Source IP", "Source Port", "→", "Destination IP", "Destination Port", "Protocol", "Bytes"]
+        self.flows_tree.setHeaderLabels(columns)
+        self.flows_tree.setColumnCount(len(columns))
+        
+        # Set column widths
         col_widths = {
-            "Time": 140, "Source IP": 120, "Source Port": 80, "→": 20, 
-            "Destination IP": 120, "Destination Port": 80, "Protocol": 80,
-            "Bytes": 100
+            0: 140,   # Time
+            1: 120,   # Source IP
+            2: 80,    # Source Port
+            3: 20,    # Arrow
+            4: 120,   # Destination IP
+            5: 80,    # Destination Port
+            6: 80,    # Protocol
+            7: 100    # Bytes
         }
         
-        for col in columns:
-            self.flows_tree.heading(col, text=col)
-            self.flows_tree.column(col, width=col_widths.get(col, 100), anchor=tk.CENTER)
+        for col, width in col_widths.items():
+            self.flows_tree.setColumnWidth(col, width)
         
-        # Add scrollbars
-        vsb = ttk.Scrollbar(self.flows_tab, orient="vertical", command=self.flows_tree.yview)
-        hsb = ttk.Scrollbar(self.flows_tab, orient="horizontal", command=self.flows_tree.xview)
-        self.flows_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        # Grid layout
-        self.flows_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        # Add to layout
+        layout.addWidget(self.flows_tree)
     
     def setup_alerts_tab(self):
         """Setup the alerts tab."""
-        self.alerts_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.alerts_tab, text="Alerts")
+        self.alerts_tab = QWidget()
+        self.tab_widget.addTab(self.alerts_tab, "Alerts")
+        
+        # Main layout
+        layout = QVBoxLayout(self.alerts_tab)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
         
         # Alerts treeview
-        columns = ("Time", "Severity", "Source IP", "Destination IP", "Protocol", "Description")
-        self.alerts_tree = ttk.Treeview(
-            self.alerts_tab, 
-            columns=columns, 
-            show="headings",
-            selectmode="extended"
-        )
+        self.alerts_tree = QTreeWidget()
+        self.alerts_tree.setAlternatingRowColors(True)
+        self.alerts_tree.setSelectionBehavior(QTreeWidget.SelectRows)
+        self.alerts_tree.setSelectionMode(QTreeWidget.ExtendedSelection)
+        self.alerts_tree.setSortingEnabled(True)
+        self.alerts_tree.setAnimated(True)
         
-        # Configure columns
+        # Set up columns
+        columns = ["Time", "Severity", "Source IP", "Destination IP", "Protocol", "Description"]
+        self.alerts_tree.setHeaderLabels(columns)
+        self.alerts_tree.setColumnCount(len(columns))
+        
+        # Set column widths
         col_widths = {
-            "Time": 140, "Severity": 80, "Source IP": 120, 
-            "Destination IP": 120, "Protocol": 80, "Description": 250
+            0: 140,   # Time
+            1: 80,    # Severity
+            2: 120,   # Source IP
+            3: 120,   # Destination IP
+            4: 80,    # Protocol
+            5: 250    # Description
         }
         
-        for col in columns:
-            self.alerts_tree.heading(col, text=col)
-            self.alerts_tree.column(col, width=col_widths.get(col, 100))
+        for col, width in col_widths.items():
+            self.alerts_tree.setColumnWidth(col, width)
         
-        # Add scrollbars
-        vsb = ttk.Scrollbar(self.alerts_tab, orient="vertical", command=self.alerts_tree.yview)
-        hsb = ttk.Scrollbar(self.alerts_tab, orient="horizontal", command=self.alerts_tree.xview)
-        self.alerts_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        # Add to layout
+        layout.addWidget(self.alerts_tree)
         
-        # Grid layout
-        self.alerts_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        # Context menu for alerts
+        self.alerts_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.alerts_tree.customContextMenuRequested.connect(self.show_alert_context_menu)
     
     def start_background_tasks(self):
         """Start background tasks for data collection and analysis."""
-        # Start flow collection
-        self.flow_thread = threading.Thread(target=self.collect_flows, daemon=True)
-        self.flow_thread.start()
-        
-        # Start analysis thread
-        self.analysis_thread = threading.Thread(target=self.analyze_flows, daemon=True)
-        self.analysis_thread.start()
-        
-        # Start UI update loop
-        self.update_ui()
-    
-    def collect_flows(self):
-        """Collect network flows in a background thread."""
         try:
-            # Start the collector
-            self.flow_collector.start()
+            if not self.flow_collector or not self.traffic_analyzer:
+                print("Error: Flow collector or traffic analyzer not initialized", file=sys.stderr)
+                return
+                
+            print("Starting background tasks...")
             
-            while self.running:
-                # Get recent flows from the collector
-                flows = self.flow_collector.get_recent_flows()
-                for flow in flows:
-                    if not self.running:
-                        break
-                    self.event_queue.put(NDREvent("new_flow", flow))
-                # Sleep briefly to prevent high CPU usage
-                import time
-                time.sleep(1)
+            # Start flow collection worker
+            self.flow_worker = FlowCollectorWorker(self.flow_collector)
+            self.flow_worker.flow_collected.connect(self.handle_new_flow)
+            self.flow_worker.error_occurred.connect(self.handle_error)
+            
+            # Start traffic analysis worker
+            self.analysis_worker = TrafficAnalyzerWorker(self.flow_collector, self.traffic_analyzer)
+            self.analysis_worker.alert_detected.connect(self.handle_new_alert)
+            self.analysis_worker.error_occurred.connect(self.handle_error)
+            
+            # Start the worker threads
+            self.flow_thread = QThread()
+            self.analysis_thread = QThread()
+            
+            self.flow_worker.moveToThread(self.flow_thread)
+            self.analysis_worker.moveToThread(self.analysis_thread)
+            
+            self.flow_thread.started.connect(self.flow_worker.run)
+            self.analysis_thread.started.connect(self.analysis_worker.run)
+            
+            # Start the threads
+            self.flow_thread.start()
+            self.analysis_thread.start()
+            
+            # Start the update timer
+            if hasattr(self, 'update_timer'):
+                self.update_timer.start(1000)  # Update every second
+            else:
+                print("Warning: Update timer not initialized")
+            
+            print("Background tasks started successfully")
+            
         except Exception as e:
-            self.logger.error(f"Error in flow collection: {e}")
-            self.event_queue.put(NDREvent("error", f"Flow collection error: {e}"))
-    
-    def analyze_flows(self):
-        """Analyze network flows for threats in a background thread."""
-        try:
-            while self.running:
-                # Get recent flows and analyze them
-                flows = self.flow_collector.get_recent_flows()
-                alerts = self.traffic_analyzer.analyze_flows(flows)
-                for alert in alerts:
-                    if not self.running:
-                        break
-                    self.event_queue.put(NDREvent("new_alert", alert))
-                # Sleep briefly to prevent high CPU usage
-                import time
-                time.sleep(1)
-        except Exception as e:
-            self.logger.error(f"Error in flow analysis: {e}")
-            self.event_queue.put(NDREvent("error", f"Analysis error: {e}"))
+            error_msg = f"Failed to start background tasks: {str(e)}"
+            print(error_msg, file=sys.stderr)
+            self.handle_error(error_msg)
     
     def update_ui(self):
-        """Process events from the queue and update the UI."""
+        """Update the UI with the latest data."""
         try:
-            while True:
-                try:
-                    event = self.event_queue.get_nowait()
-                    self.process_event(event)
-                except queue.Empty:
-                    break
-            
             # Update stats
             self.update_stats()
             
-            # Schedule next update
-            if self.running:
-                self.root.after(1000, self.update_ui)
-                
+            # Update flows tree
+            self.update_flows_tree()
+            
+            # Update alerts tree
+            self.update_alerts_tree()
+            
         except Exception as e:
             self.logger.error(f"Error in UI update: {e}")
-            if self.running:
-                self.root.after(1000, self.update_ui)
-    
-    def process_event(self, event: NDREvent):
-        """Process a single event from the queue."""
-        try:
-            if event.event_type == "new_flow":
-                self.handle_new_flow(event.data)
-            elif event.event_type == "new_alert":
-                self.handle_new_alert(event.data)
-            elif event.event_type == "error":
-                self.handle_error(event.data)
-        except Exception as e:
-            self.logger.error(f"Error processing event: {e}")
     
     def handle_new_flow(self, flow: dict):
         """Handle a new network flow."""
-        self.flows.append(flow)
-        self.flow_stats['total_flows'] += 1
-        self.flow_stats['total_bytes'] += flow.get('bytes', 0)
-        
-        # Update flows tree
-        self.update_flows_tree()
+        try:
+            self.flows.append(flow)
+            self.flow_stats['total_flows'] += 1
+            self.flow_stats['total_bytes'] += flow.get('bytes', 0)
+            
+            # Keep only the most recent flows (for performance)
+            if len(self.flows) > 1000:
+                self.flows = self.flows[-1000:]
+                
+            # Update the UI
+            self.update_flows_tree()
+            
+        except Exception as e:
+            self.logger.error(f"Error handling new flow: {e}")
+            self.handle_error(f"Failed to process flow: {e}")
     
     def handle_new_alert(self, alert: dict):
         """Handle a new alert."""
-        self.alerts.append(alert)
-        self.flow_stats['alerts_count'] += 1
-        
-        # Update alerts tree
-        self.update_alerts_tree()
-        
-        # Show notification for high severity alerts
-        if alert.get('severity') in ['HIGH', 'CRITICAL']:
-            self.show_alert_notification(alert)
+        try:
+            self.alerts.append(alert)
+            self.flow_stats['alerts_count'] += 1
+            
+            # Update the UI
+            self.update_alerts_tree()
+            
+            # Show notification for high severity alerts
+            if alert.get('severity') in ['HIGH', 'CRITICAL']:
+                self.show_alert_notification(alert)
+                
+        except Exception as e:
+            self.logger.error(f"Error handling new alert: {e}")
+            self.handle_error(f"Failed to process alert: {e}")
     
     def handle_error(self, error_msg: str):
         """Handle an error message."""
-        self.logger.error(error_msg)
-        self.update_status(f"Error: {error_msg}")
-    
+        try:
+            self.logger.error(error_msg)
+            self.update_status(f"Error: {error_msg}")
+            
+            # Show error message to user
+            QMessageBox.critical(self, "Error", error_msg)
+            
+        except Exception as e:
+            # If there's an error in the error handler, just log it
+            import traceback
+            self.logger.error(f"Error in error handler: {e}\n{traceback.format_exc()}")
+
+
     def update_stats(self):
         """Update the statistics display."""
-        self.stats_vars['total_flows'].set(f"{self.flow_stats['total_flows']:,}")
-        self.stats_vars['total_bytes'].set(f"{self.flow_stats['total_bytes']:,} B")
-        self.stats_vars['alerts_count'].set(f"{self.flow_stats['alerts_count']:,}")
+        self.stats_vars['total_flows'].setText(f"{self.flow_stats['total_flows']:,}")
+        self.stats_vars['total_bytes'].setText(f"{self.flow_stats['total_bytes']:,} B")
+        self.stats_vars['alerts_count'].setText(f"{self.flow_stats['alerts_count']:,}")
         
         # Update top protocol
         if self.flows:
@@ -344,13 +616,16 @@ class NDRGUI:
             
             if protocols:
                 top_proto = max(protocols.items(), key=lambda x: x[1])[0]
-                self.stats_vars['top_protocol'].set(top_proto)
-    
+                self.stats_vars['top_protocol'].setText(top_proto)
+
     def update_flows_tree(self):
         """Update the flows treeview with current flow data."""
+        # Block signals to prevent UI flickering
+        self.flows_tree.blockSignals(True)
+        self.flows_tree.setSortingEnabled(False)
+        
         # Clear existing items
-        for item in self.flows_tree.get_children():
-            self.flows_tree.delete(item)
+        self.flows_tree.clear()
         
         # Add flows (show most recent first)
         for flow in reversed(self.flows[-1000:]):  # Show last 1000 flows
@@ -361,22 +636,44 @@ class NDRGUI:
                 except (ValueError, TypeError):
                     timestamp = datetime.now()
             
-            self.flows_tree.insert("", "end", values=(
+            item = QTreeWidgetItem([
                 timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 flow.get('src_ip', ''),
-                flow.get('src_port', ''),
+                str(flow.get('src_port', '')),
                 "→",
                 flow.get('dst_ip', ''),
-                flow.get('dst_port', ''),
+                str(flow.get('dst_port', '')),
                 flow.get('protocol', 'unknown'),
                 f"{flow.get('bytes', 0):,} B"
-            ))
-    
+            ])
+            
+            # Set text alignment for numeric columns
+            for i in [2, 5, 7]:  # Source Port, Destination Port, Bytes columns
+                item.setTextAlignment(i, Qt.AlignRight | Qt.AlignVCenter)
+            
+            self.flows_tree.addTopLevelItem(item)
+        
+        # Re-enable sorting and signals
+        self.flows_tree.setSortingEnabled(True)
+        self.flows_tree.blockSignals(False)
+
     def update_alerts_tree(self):
         """Update the alerts treeview with current alert data."""
+        # Block signals to prevent UI flickering
+        self.alerts_tree.blockSignals(True)
+        self.alerts_tree.setSortingEnabled(False)
+        
         # Clear existing items
-        for item in self.alerts_tree.get_children():
-            self.alerts_tree.delete(item)
+        self.alerts_tree.clear()
+        
+        # Define severity colors
+        severity_colors = {
+            'CRITICAL': QColor(255, 200, 200),  # Light red
+            'HIGH': QColor(255, 220, 200),      # Light orange
+            'MEDIUM': QColor(255, 240, 200),    # Light yellow
+            'LOW': QColor(220, 230, 255),       # Light blue
+            'INFO': QColor(230, 230, 230)       # Light gray
+        }
         
         # Add alerts (show most recent first)
         for alert in reversed(self.alerts[-1000:]):  # Show last 1000 alerts
@@ -390,91 +687,216 @@ class NDRGUI:
             severity = alert.get('severity', 'INFO')
             description = alert.get('description', '')
             
-            self.alerts_tree.insert("", "end", values=(
+            # Create the item
+            item = QTreeWidgetItem([
                 timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 severity,
                 alert.get('source_ip', ''),
                 alert.get('destination_ip', ''),
                 alert.get('protocol', ''),
                 (description[:97] + '...') if len(description) > 100 else description
-            ), tags=(severity.lower(),))
+            ])
+            
+            # Set background color based on severity
+            bg_color = severity_colors.get(severity.upper(), QColor(255, 255, 255))
+            for i in range(self.alerts_tree.columnCount()):
+                item.setBackground(i, bg_color)
+            
+            # Make high severity items bold
+            if severity in ['HIGH', 'CRITICAL']:
+                font = item.font(0)
+                font.setBold(True)
+                for i in range(self.alerts_tree.columnCount()):
+                    item.setFont(i, font)
+            
+            self.alerts_tree.addTopLevelItem(item)
         
-        # Configure tag colors
-        self.alerts_tree.tag_configure('critical', background='#ffcccc')
-        self.alerts_tree.tag_configure('high', background='#ffe6cc')
-        self.alerts_tree.tag_configure('medium', background='#ffffcc')
-        self.alerts_tree.tag_configure('low', background='#e6f3ff')
-        self.alerts_tree.tag_configure('info', background='#f0f0f0')
-    
-    def show_alert_notification(self, alert: dict):
+        # Re-enable sorting and signals
+        self.alerts_tree.setSortingEnabled(True)
+        self.alerts_tree.blockSignals(False)
+
+    def show_alert_notification(self, alert):
         """Show a notification for a new alert."""
-        notification = tk.Toplevel(self.root)
-        notification.title(f"{alert.get('severity', 'ALERT')}: {alert.get('title', 'New Alert')}")
-        notification.geometry("500x200")
-        notification.transient(self.root)
-        notification.grab_set()
+        title = f"{alert.get('severity', 'ALERT')}: {alert.get('rule_name', 'New Alert')}"
+        message = f"{alert.get('description', 'No description')}\n"
+        message += f"Source: {alert.get('source_ip', 'Unknown')}\n"
+        message += f"Destination: {alert.get('destination_ip', 'Unknown')}\n"
+        message += f"Protocol: {alert.get('protocol', 'N/A')}"
         
-        # Add content
-        ttk.Label(notification, text=alert.get('title', 'New Alert'), font=('Arial', 12, 'bold')).pack(pady=5)
-        ttk.Label(notification, text=f"Severity: {alert.get('severity', 'UNKNOWN')}", 
-                 foreground="red" if alert.get('severity') in ['HIGH', 'CRITICAL'] else "black").pack()
-        ttk.Label(notification, text=f"Source: {alert.get('source_ip', 'N/A')}").pack()
-        ttk.Label(notification, text=f"Destination: {alert.get('destination_ip', 'N/A')}").pack()
-        ttk.Label(notification, text=alert.get('description', 'No description available'), 
-                 wraplength=480).pack(expand=True, fill='both', padx=10, pady=5)
-        
-        # Add close button
-        ttk.Button(notification, text="Dismiss", command=notification.destroy).pack(pady=10)
-    
-    def update_status(self, message: str):
+        # Show a message box for critical alerts
+        if alert.get('severity') in ['CRITICAL']:
+            QMessageBox.warning(self, title, message)
+        else:
+            # For non-critical alerts, just log and update status
+            self.logger.info(f"Alert: {title} - {message}")
+            self.update_status(f"New {alert.get('severity', 'alert')} detected")
+
+    def update_status(self, message, timeout=5000):
         """Update the status bar with a message."""
-        self.status_var.set(message)
-        self.logger.info(f"Status: {message}")
+        self.status_bar.showMessage(message, timeout)
     
-    def filter_flows(self):
-        """Filter flows based on search criteria."""
-        filter_text = self.flow_filter_var.get().lower()
-        if not filter_text:
-            self.update_flows_tree()
+    def show_alert_context_menu(self, position):
+        """Show context menu for alert items."""
+        item = self.alerts_tree.itemAt(position)
+        if not item:
             return
         
-        # Filter flows
-        filtered_flows = [
-            flow for flow in self.flows[-1000:]
-            if (filter_text in flow.src_ip.lower() or 
-                filter_text in flow.dst_ip.lower() or
-                (flow.src_port and filter_text in str(flow.src_port)) or
-                (flow.dst_port and filter_text in str(flow.dst_port)) or
-                (hasattr(flow.protocol, 'name') and filter_text in flow.protocol.name.lower()) or
-                (isinstance(flow.protocol, str) and filter_text in flow.protocol.lower()))
-        ]
+        # Create and show context menu
+        menu = QMenu()
+        view_details_action = menu.addAction("View Details")
+        mark_resolved_action = menu.addAction("Mark as Resolved")
+        export_action = menu.addAction("Export Alert")
         
-        # Update tree with filtered results
-        for item in self.flows_tree.get_children():
-            self.flows_tree.delete(item)
+        action = menu.exec_(self.alerts_tree.viewport().mapToGlobal(position))
         
-        for flow in reversed(filtered_flows):
-            self.flows_tree.insert("", "end", values=(
-                flow.start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                flow.src_ip,
-                flow.src_port if flow.src_port else "",
-                "→",
-                flow.dst_ip,
-                flow.dst_port if flow.dst_port else "",
-                flow.protocol.name if hasattr(flow.protocol, 'name') else str(flow.protocol),
-                f"{flow.bytes_sent + flow.bytes_received:,} B"
-            ))
-    
-    def on_closing(self):
+        if action == view_details_action:
+            self.view_alert_details(item)
+        elif action == mark_resolved_action:
+            self.mark_alert_resolved(item)
+        elif action == export_action:
+            self.export_alert(item)
+
+    def view_alert_details(self, item):
+        """Show detailed information about the selected alert."""
+        # Get the alert data from the item
+        alert_data = {
+            'time': item.text(0),
+            'severity': item.text(1),
+            'source_ip': item.text(2),
+            'destination_ip': item.text(3),
+            'protocol': item.text(4),
+            'description': item.text(5)
+        }
+        
+        # Create a detailed message
+        details = f"""
+        <b>Time:</b> {alert_data['time']}<br>
+        <b>Severity:</b> {alert_data['severity']}<br>
+        <b>Source IP:</b> {alert_data['source_ip']}<br>
+        <b>Destination IP:</b> {alert_data['destination_ip']}<br>
+        <b>Protocol:</b> {alert_data['protocol']}<br>
+        <b>Description:</b><br>{alert_data['description']}
+        """
+        
+        # Show the details in a message box
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("Alert Details")
+        msg_box.setTextFormat(Qt.RichText)
+        msg_box.setText(details)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec_()
+
+    def mark_alert_resolved(self, item):
+        """Mark the selected alert as resolved."""
+        # In a real application, you would update the alert status in your data model
+        # For now, we'll just remove it from the view
+        index = self.alerts_tree.indexOfTopLevelItem(item)
+        if index >= 0:
+            self.alerts_tree.takeTopLevelItem(index)
+            self.update_status("Alert marked as resolved")
+
+    def export_alert(self, item):
+        """Export the selected alert to a file."""
+        # In a real application, you would implement actual file export logic
+        # For now, we'll just show a message
+        QMessageBox.information(
+            self, 
+            "Export Alert", 
+            f"Exporting alert: {item.text(5)[:50]}..."
+        )
+
+    def filter_flows(self):
+        """Filter flows based on the search term."""
+        search_term = self.flow_filter_edit.text().lower()
+        if not search_term:
+            # If search is empty, show all flows
+            for i in range(self.flows_tree.topLevelItemCount()):
+                self.flows_tree.topLevelItem(i).setHidden(False)
+            return
+        
+        # Hide items that don't match the search term
+        for i in range(self.flows_tree.topLevelItemCount()):
+            item = self.flows_tree.topLevelItem(i)
+            match_found = False
+            
+            # Check each column for a match
+            for col in range(self.flows_tree.columnCount()):
+                if search_term in item.text(col).lower():
+                    match_found = True
+                    break
+            
+            item.setHidden(not match_found)
+
+    def closeEvent(self, event):
         """Handle window close event."""
         self.running = False
-        self.root.destroy()
+        
+        # Stop worker threads
+        if hasattr(self, 'flow_worker'):
+            self.flow_worker.stop()
+        if hasattr(self, 'analysis_worker'):
+            self.analysis_worker.stop()
+        
+        # Stop the update timer
+        if hasattr(self, 'update_timer'):
+            self.update_timer.stop()
+        
+        event.accept()
+
+        
+    def setup_logging(self):
+        """Set up logging configuration."""
+        self.logger = logging.getLogger('NDR_GUI')
+        self.logger.setLevel(logging.INFO)
+        
+        # Create console handler
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
+        
+        # Create formatter and add it to the handlers
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        
+        # Add the handlers to the logger
+        self.logger.addHandler(ch)
 
 def main():
     """Main entry point for the NDR GUI application."""
-    root = tk.Tk()
-    app = NDRGUI(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    
+    # Set application style
+    app.setStyle('Fusion')
+    
+    # Set application information
+    app.setApplicationName("Network Detection & Response")
+    app.setApplicationVersion("1.0.0")
+    app.setOrganizationName("Security Ops Center")
+    
+    # Create and show the main window
+    try:
+        window = NDRGUI()
+        window.show()
+        
+        # Start the event loop
+        sys.exit(app.exec_())
+        
+    except Exception as e:
+        # Log any unhandled exceptions
+        import traceback
+        error_msg = f"Unhandled exception: {e}\n{traceback.format_exc()}"
+        print(error_msg, file=sys.stderr)
+        
+        # Show error message to user
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("An error occurred")
+        msg.setInformativeText("The application encountered an unexpected error and needs to close.")
+        msg.setWindowTitle("Error")
+        msg.setDetailedText(error_msg)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+        
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
