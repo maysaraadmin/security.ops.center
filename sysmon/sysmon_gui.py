@@ -6,16 +6,16 @@ import win32api
 import win32security
 import datetime
 import pandas as pd
-from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, 
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, QTableWidget, 
                             QTableWidgetItem, QPushButton, QComboBox, QLabel, QHBoxLayout,
                             QLineEdit, QHeaderView, QMessageBox, QTabWidget, QSplitter,
                             QGroupBox, QFormLayout, QTextEdit, QFileDialog, QStatusBar, QDialog)
-from PySide6.QtCore import Qt, QThread, Signal as pyqtSignal
-from PySide6.QtGui import QFont, QTextCursor
+from PyQt5.QtCore import Qt, QThread, pyqtSignal as Signal
+from PyQt5.QtGui import QFont, QTextCursor
 
 class SysmonEventFetcher(QThread):
-    update_signal = pyqtSignal(dict)
-    finished_signal = pyqtSignal()
+    update_signal = Signal(dict)
+    finished_signal = Signal()
     
     def __init__(self, event_types=None, limit=1000):
         super().__init__()
@@ -247,6 +247,10 @@ class SysmonGUI(QMainWindow):
         self.events_table.setColumnCount(6)
         self.events_table.setHorizontalHeaderLabels(["Time", "Event ID", "Level", "Source", "Computer", "Message"])
         self.events_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
+        # In PyQt5, we need to set the resize mode for each column individually
+        for i in range(6):
+            if i != 5:  # Don't override the stretch for the message column
+                self.events_table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self.events_table.verticalHeader().setVisible(False)
         self.events_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.events_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -345,13 +349,57 @@ class SysmonGUI(QMainWindow):
         self.events_table.setItem(row_position, 5, QTableWidgetItem(message))
         
         # Store full message as user data
-        self.events_table.item(row_position, 0).setData(Qt.ItemDataRole.UserRole, event_data)
+        self.events_table.item(row_position, 0).setData(Qt.UserRole, event_data)
     
     def on_fetch_complete(self):
         self.statusBar().showMessage(f"Loaded {self.events_table.rowCount()} events")
     
     def apply_filters(self):
         self.refresh_events()
+    
+    def show_event_details(self, index):
+        row = index.row()
+        event_data = self.events_table.item(row, 0).data(Qt.UserRole)
+        
+        # Create a dialog to show event details
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Event ID: {event_data['EventID']}")
+        dialog.resize(800, 600)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Create a text edit to display the full message
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setFont(QFont("Consolas", 10))
+        
+        # Format the event data for display
+        details = f"""
+        Time: {event_data['TimeCreated']}
+        Event ID: {event_data['EventID']}
+        Level: {event_data['Level']}
+        Source: {event_data['Source']}
+        Computer: {event_data['Computer']}
+        
+        Message:
+        {event_data['Message']}
+        """
+        
+        text_edit.setPlainText(details)
+        
+        # Add a close button
+        button_box = QHBoxLayout()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        button_box.addStretch()
+        button_box.addWidget(close_btn)
+        
+        # Add widgets to layout
+        layout.addWidget(text_edit)
+        layout.addLayout(button_box)
+        
+        # Show the dialog
+        dialog.exec_()
     
     def export_events(self):
         if self.events_table.rowCount() == 0:
@@ -388,69 +436,23 @@ class SysmonGUI(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Export Error", f"Failed to export events: {str(e)}")
     
-    def show_event_details(self, index):
-        row = index.row()
-        event_data = self.events_table.item(row, 0).data(Qt.UserRole)
-        
-        # Create a dialog to show event details
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Event ID: {event_data['EventID']}")
-        dialog.resize(800, 600)
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Add basic info
-        info_group = QGroupBox("Event Information")
-        info_layout = QFormLayout()
-        
-        info_layout.addRow("Time:", QLabel(event_data['TimeCreated']))
-        info_layout.addRow("Event ID:", QLabel(str(event_data['EventID'])))
-        info_layout.addRow("Level:", QLabel(event_data['Level']))
-        info_layout.addRow("Source:", QLabel(event_data['Source']))
-        info_layout.addRow("Computer:", QLabel(event_data['Computer']))
-        
-        info_group.setLayout(info_layout)
-        layout.addWidget(info_group)
-        
-        # Add message in a scrollable text area
-        message_group = QGroupBox("Message")
-        message_layout = QVBoxLayout()
-        
-        message_text = QTextEdit()
-        message_text.setPlainText(event_data['Message'])
-        message_text.setReadOnly(True)
-        
-        message_layout.addWidget(message_text)
-        message_group.setLayout(message_layout)
-        layout.addWidget(message_group, 1)  # Stretch factor 1 to take remaining space
-        
-        # Add close button
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
-        
-        dialog.exec_()
-    
     def show_config_dialog(self):
-        # In a real application, this would show the current Sysmon configuration
-        # and allow editing it
         QMessageBox.information(
-            self, 
+            self,
             "Sysmon Configuration", 
             "This feature would show the current Sysmon configuration and allow editing it."
         )
     
     def tab_changed(self, index):
-        if index == 1:  # Dashboard tab
-            self.refresh_dashboard()
-    
-    def refresh_dashboard(self):
-        # In a real application, this would update the dashboard with current statistics
-        pass
+        if index == 0:  # Events tab
+            pass
+        elif index == 1:  # Dashboard tab
+            # Update dashboard data here
+            pass
     
     def closeEvent(self, event):
-        # Clean up worker thread
-        if self.worker and self.worker.isRunning():
+        # Ensure worker thread is properly stopped when closing the application
+        if hasattr(self, 'worker') and self.worker is not None and self.worker.isRunning():
             self.worker.stop()
             self.worker.wait()
         event.accept()
@@ -468,7 +470,7 @@ def main():
     # Load initial data
     window.refresh_events()
     
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
