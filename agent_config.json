@@ -1,0 +1,14 @@
+{
+    "log_level": "DEBUG",
+    "log_file": "siem_agent.log",
+    "api_endpoint": "http://localhost:5000/api/v1/events",
+    "collectors": {
+        "system_metrics": true,
+        "network_activity": true,
+        "file_integrity": true
+    },
+    "heartbeat_interval": 10,
+    "siem_server": "localhost",
+    "siem_port": 10514,
+    "use_tls": false
+}

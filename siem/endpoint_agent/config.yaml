@@ -1,0 +1,184 @@
+# SIEM Endpoint Agent Configuration
+
+# SIEM Server Configuration
+siem_server: "siem.example.com"  # Replace with your SIEM server address
+siem_port: 514                   # Default port for syslog over TLS
+use_tls: true                    # Use TLS for secure communication
+verify_ssl: true                 # Verify SSL certificate
+ca_cert: "/path/to/ca.crt"       # Path to CA certificate
+client_cert: "/path/to/client.crt" # Path to client certificate (if using mutual TLS)
+client_key: "/path/to/client.key"  # Path to client private key (if using mutual TLS)
+
+# Agent Settings
+agent_id: "auto"                 # Auto-generate if not specified
+heartbeat_interval: 300          # Seconds between heartbeats (5 minutes)
+batch_size: 50                   # Maximum number of logs to send in a single batch
+max_retries: 3                   # Maximum number of retry attempts for failed sends
+retry_delay: 5                   # Seconds to wait between retries
+
+# Collectors Configuration
+collectors:
+  # Windows Event Log Collector
+  windows_events:
+    enabled: true
+    log_types:                   # Which Windows event logs to collect
+      - Security
+      - System
+      - Application
+    max_events_per_log: 1000     # Maximum events to collect per log per cycle
+    max_event_age: 3600          # Maximum age of events to collect (seconds)
+  
+  # Sysmon Collector
+  sysmon:
+    enabled: true
+    max_events: 1000             # Maximum events to collect per cycle
+    max_event_age: 3600          # Maximum age of events to collect (seconds)
+  
+  # System Information Collector
+  system_info:
+    enabled: true
+    collection_interval: 3600    # How often to collect system info (seconds)
+    
+    # What system information to collect
+    collect_hardware: true
+    collect_network: true
+    collect_users: true
+    collect_processes: true
+    collect_software: true       # Collect installed software (less frequently)
+    
+    # Software collection runs on a separate schedule (once per day)
+    software_collection_interval: 86400  # 24 hours
+  
+  # Process Monitoring
+  process_monitor:
+    enabled: true
+    scan_interval: 60           # How often to scan for new processes (seconds)
+    track_children: true        # Track child processes
+    track_network: true         # Track network connections
+    max_processes: 1000         # Maximum number of processes to track
+  
+  # File Integrity Monitoring
+  fim:
+    enabled: true
+    scan_interval: 300          # How often to scan for changes (seconds)
+    paths:                      # Directories to monitor
+      - path: "C:\\Windows\\System32"
+        recursive: true
+        exclude: ["*.log", "*.tmp"]
+      - path: "C:\\Program Files"
+        recursive: true
+      - path: "C:\\ProgramData"
+        recursive: true
+    
+    # What changes to monitor
+    monitor_create: true
+    monitor_modify: true
+    monitor_delete: true
+    monitor_attributes: true
+    monitor_permissions: true
+    
+    # File hashing
+    hash_algorithm: "sha256"    # sha1, sha256, md5, or none
+    
+    # Ignore patterns (regex)
+    ignore_patterns:
+      - ".*\\.log$"
+      - ".*\\Temp\\.*"
+      - ".*\\Temporary Internet Files\\.*"
+
+# Logging Configuration
+logging:
+  level: "INFO"                 # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "siem_agent.log"        # Path to log file (empty for stderr)
+  max_size: 10485760            # Max log file size in bytes (10MB)
+  backup_count: 5               # Number of backup logs to keep
+  
+# Performance Tuning
+performance:
+  worker_threads: 4             # Number of worker threads for processing
+  queue_size: 10000             # Maximum queue size for pending logs
+  max_memory_mb: 512            # Maximum memory usage in MB before rotating logs
+  
+# Security Settings
+security:
+  tls_min_version: "TLSv1.2"    # Minimum TLS version to use
+  tls_ciphers: "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA"
+  
+  # Certificate pinning
+  cert_pinning: false
+  pinned_cert_hashes: []        # List of allowed certificate hashes (SHA-256)
+  
+  # Network restrictions
+  allowed_ips: []               # Whitelist of allowed SIEM server IPs
+  
+# Proxy Configuration (if needed)
+proxy:
+  enabled: false
+  url: "http://proxy.example.com:8080"
+  username: ""
+  password: ""                 # Consider using environment variable instead
+  
+# Advanced Settings
+advanced:
+  debug: false                  # Enable debug mode (verbose logging)
+  compress_logs: true           # Compress logs before sending
+  buffer_dir: "/var/cache/siem" # Directory for buffering logs if SIEM is unreachable
+  max_buffer_size: 1073741824   # Maximum buffer size in bytes (1GB)
+  
+  # Rate limiting
+  max_events_per_second: 1000   # Maximum events per second to send
+  
+  # Process priority (Windows: IDLE/BELOW_NORMAL/NORMAL/ABOVE_NORMAL/HIGH/REALTIME)
+  process_priority: "NORMAL"
+  
+  # Memory management
+  max_log_age_days: 7           # Maximum age of logs to keep in buffer
+  
+# Custom Fields (added to all events)
+custom_fields:
+  environment: "production"
+  location: "datacenter-1"
+  department: "security"
+  
+# Tags (for categorization)
+tags:
+  - "windows"
+  - "endpoint"
+  - "security"
+
+# Update Settings
+update:
+  enabled: true
+  check_interval: 86400         # Check for updates every 24 hours
+  url: "https://updates.example.com/endpoint-agent"
+  channel: "stable"             # stable, beta, alpha
+  
+# Remote Configuration
+remote_config:
+  enabled: true
+  url: "https://config.example.com/endpoint-agent"
+  check_interval: 3600          # Check for config updates every hour
+  auth_token: ""                # Authentication token for remote config
+  
+# Self-Protection
+self_protection:
+  enabled: true
+  prevent_uninstall: false
+  prevent_stop: false
+  hide_process: false
+  
+# Compliance Settings (for reporting)
+compliance:
+  pci_dss: false
+  hipaa: false
+  gdpr: false
+  nist_800_53: false
+  
+# Extension Modules
+extensions:
+  # Example extension configuration
+  # - name: "custom_collector"
+  #   enabled: true
+  #   config:
+  #     setting1: "value1"
+  #     setting2: "value2"

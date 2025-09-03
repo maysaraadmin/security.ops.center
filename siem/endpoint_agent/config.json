@@ -1,0 +1,15 @@
+{
+    "siem_server": "localhost",
+    "siem_port": 10514,
+    "use_tls": false,
+    "verify_ssl": false,
+    "collectors": {
+        "windows_events": true,
+        "sysmon_events": true,
+        "system_info": true
+    },
+    "log_level": "INFO",
+    "heartbeat_interval": 300,
+    "max_retries": 3,
+    "retry_delay": 5
+}

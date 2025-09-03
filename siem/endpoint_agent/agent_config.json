@@ -1,0 +1,23 @@
+{
+    "log_level": "INFO",
+    "log_file": "siem_agent.log",
+    "monitor_interval": 5,
+    "api_endpoint": "http://localhost:5000/api/v1/events",
+    "api_key": "your_api_key_here",
+    "collectors": {
+        "system_metrics": true,
+        "process_monitoring": true,
+        "file_integrity": true,
+        "network_connections": true
+    },
+    "alerting": {
+        "enabled": true,
+        "email_notifications": false,
+        "slack_webhook": "",
+        "critical_severity_only": false
+    },
+    "heartbeat_interval": 60,
+    "siem_server": "localhost",
+    "siem_port": 10514,
+    "use_tls": false
+}
