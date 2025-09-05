@@ -22,10 +22,10 @@ from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject, QSize
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QTextCursor
 
 # Local imports from edr package
-from . import __version__
-from .core import ThreatDetector
-from .rule_manager import RuleManager
-from .threat_detection import ThreatDetectionEngine
+from edr import __version__
+from edr.core import ThreatDetector
+from edr.rule_manager import RuleManager
+from edr.threat_detection import ThreatDetectionEngine
 
 # Configure logging
 logging.basicConfig(

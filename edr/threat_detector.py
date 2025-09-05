@@ -1,11 +1,24 @@
+import os
 import psutil
 import hashlib
 import json
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 import requests
 import threading
 import time
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('edr_agent.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('edr.threat_detector')
 
 class ThreatDetector:
     def __init__(self):
@@ -67,6 +80,72 @@ class ThreatDetector:
             except Exception as e:
                 print(f"Monitoring error: {e}")
     
+    def _get_file_hash(self, file_path: str, algorithm: str = 'sha256') -> Optional[str]:
+        """Calculate the hash of a file using the specified algorithm.
+        
+        Args:
+            file_path: Path to the file to hash
+            algorithm: Hashing algorithm to use (default: sha256)
+            
+        Returns:
+            Hex digest of the file hash, or None if the file cannot be read
+        """
+        if not file_path or not os.path.exists(file_path):
+            return None
+            
+        try:
+            hasher = hashlib.new(algorithm)
+            with open(file_path, 'rb') as f:
+                # Read file in 64KB chunks for memory efficiency
+                for chunk in iter(lambda: f.read(65536), b''):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except (IOError, PermissionError) as e:
+            logger.warning(f"Could not calculate hash for {file_path}: {e}")
+            return None
+    
+    def _alert(self, threat: dict) -> None:
+        """Handle threat alerts.
+        
+        Args:
+            threat: Dictionary containing threat details
+        """
+        try:
+            # Log the threat
+            logger.warning(f"Threat detected: {threat.get('type')} - {threat.get('name')}")
+            
+            # For critical threats, take immediate action
+            if threat.get('severity') in ['high', 'critical']:
+                self._take_mitigation_action(threat)
+                
+        except Exception as e:
+            logger.error(f"Error processing alert: {e}")
+    
+    def _take_mitigation_action(self, threat: dict) -> None:
+        """Take automated response actions for critical threats.
+        
+        Args:
+            threat: Dictionary containing threat details
+        """
+        try:
+            pid = threat.get('pid')
+            if pid:
+                proc = psutil.Process(pid)
+                logger.info(f"Terminating malicious process: {proc.name()} (PID: {pid})")
+                proc.terminate()
+                
+                # If the process is still running, force kill it
+                try:
+                    proc.wait(timeout=3)
+                except (psutil.TimeoutExpired, psutil.NoSuchProcess):
+                    try:
+                        proc.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+                        
+        except Exception as e:
+            logger.error(f"Failed to mitigate threat: {e}")
+    
     def check_processes(self) -> List[dict]:
         """Check running processes for suspicious activity."""
         threats = []
@@ -95,21 +174,23 @@ class ThreatDetector:
                 
                 # Check file hashes against known threats
                 try:
-                    file_hash = self._get_file_hash(proc.exe())
-                    if file_hash in self.known_threats.get('hashes', {}):
-                        threat = {
-                            'type': 'known_malware',
-                            'pid': proc_info['pid'],
-                            'name': proc_info['name'],
-                            'file_hash': file_hash,
-                            'severity': 'critical',
-                            'timestamp': datetime.utcnow().isoformat(),
-                            'mitre_tactics': ['Execution'],
-                            'mitre_techniques': ['T1204'],
-                            'recommendation': 'Terminate this process and remove the associated file.'
-                        }
-                        threats.append(threat)
-                        self._alert(threat)
+                    exe_path = proc.exe()
+                    if exe_path:  # Only check if we have a valid executable path
+                        file_hash = self._get_file_hash(exe_path)
+                        if file_hash and file_hash in self.known_threats.get('hashes', {}):
+                            threat = {
+                                'type': 'known_malware',
+                                'pid': proc_info['pid'],
+                                'name': proc_info['name'],
+                                'file_hash': file_hash,
+                                'severity': 'critical',
+                                'timestamp': datetime.utcnow().isoformat(),
+                                'mitre_tactics': ['Execution'],
+                                'mitre_techniques': ['T1204'],
+                                'recommendation': 'Terminate this process and remove the associated file.'
+                            }
+                            threats.append(threat)
+                            self._alert(threat)
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     continue
                     

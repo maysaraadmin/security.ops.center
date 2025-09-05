@@ -10,6 +10,8 @@ setup(
     entry_points={
         'console_scripts': [
             'dlp-gui=dlp.dlp_gui:main',
+            'edr-gui=edr.edr_gui:main',
+            'edr-agent-gui=edr.edr_agent_gui:main',
         ],
     },
 )

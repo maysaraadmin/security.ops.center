@@ -37,26 +37,45 @@ class RuleManager:
             self._create_default_rules()
             return
         
-        for rule_file in self.rules_dir.glob("*.[yaml|yml|json]"):
-            try:
-                if rule_file.suffix.lower() in ['.yaml', '.yml']:
-                    with open(rule_file, 'r', encoding='utf-8') as f:
-                        rules = yaml.safe_load(f)
-                else:  # JSON
-                    with open(rule_file, 'r', encoding='utf-8') as f:
-                        rules = json.load(f)
-                
-                if isinstance(rules, list):
-                    self._process_rules(rules)
-                elif isinstance(rules, dict):
-                    self._process_rule(rules)
-                
-                logger.info(f"Loaded {len(self.rules)} rules from {rule_file}")
-                
-            except (yaml.YAMLError, json.JSONDecodeError) as e:
-                logger.error(f"Error parsing rule file {rule_file}: {e}")
-            except Exception as e:
-                logger.error(f"Error loading rule file {rule_file}: {e}")
+        # Look for both YAML and JSON rule files
+        for ext in ('*.yaml', '*.yml', '*.json'):
+            for rule_file in self.rules_dir.glob(ext):
+                try:
+                    # Get file extension and load accordingly
+                    if str(rule_file).lower().endswith(('.yaml', '.yml')):
+                        with open(rule_file, 'r', encoding='utf-8') as f:
+                            try:
+                                rules = yaml.safe_load(f)
+                                if not rules:
+                                    logger.warning(f"Empty rules file: {rule_file}")
+                                    continue
+                            except yaml.YAMLError as e:
+                                logger.error(f"Error parsing YAML file {rule_file}: {e}")
+                                continue
+                    else:  # JSON
+                        with open(rule_file, 'r', encoding='utf-8') as f:
+                            try:
+                                rules = json.load(f)
+                                if not rules:
+                                    logger.warning(f"Empty rules file: {rule_file}")
+                                    continue
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing JSON file {rule_file}: {e}")
+                                continue
+                    
+                    # Process the loaded rules
+                    if isinstance(rules, list):
+                        self._process_rules(rules)
+                    elif isinstance(rules, dict):
+                        self._process_rule(rules)
+                    
+                    logger.info(f"Loaded {len(self.rules)} rules from {rule_file}")
+                    
+                except (yaml.YAMLError, json.JSONDecodeError) as e:
+                    logger.error(f"Error parsing rule file {rule_file}: {e}")
+                except Exception as e:
+                    logger.error(f"Error loading rule file {rule_file}: {e}")
+                    logger.exception("Detailed error:")
     
     def _process_rules(self, rules: List[Dict[str, Any]]) -> None:
         """Process and validate a list of rules."""
@@ -193,30 +212,70 @@ class RuleManager:
                 for group in self.rule_groups.values():
                     group[:] = [r for r in group if r.get('id') != rule_id]
                 
+                logger.info(f"Deleted rule: {rule_id}")
                 return True
         return False
     
     def export_rules(self, output_file: str, format: str = 'yaml') -> bool:
-        """Export all rules to a file."""
+        """Export all rules to a file.
+        
+        Args:
+            output_file: Path to the output file
+            format: Output format ('yaml' or 'json')
+            
+        Returns:
+            bool: True if export was successful, False otherwise
+        """
         try:
-            with open(output_file, 'w', encoding='utf-8') as f:
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
                 if format.lower() == 'json':
-                    json.dump(self.rules, f, indent=2)
-                else:  # default to YAML
-                    yaml.dump(self.rules, f, default_flow_style=False)
+                    json.dump(self.rules, f, indent=2, ensure_ascii=False)
+                else:  # Default to YAML
+                    yaml.dump(self.rules, f, default_flow_style=False, allow_unicode=True)
+            
+            logger.info(f"Exported {len(self.rules)} rules to {output_path}")
             return True
+            
         except Exception as e:
             logger.error(f"Error exporting rules: {e}")
             return False
 
-# Example usage
+def main():
+    """Example usage of the RuleManager class."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='EDR Rule Manager')
+    parser.add_argument('--rules-dir', default='rules', help='Directory containing rule files')
+    parser.add_argument('--export', help='Export rules to file')
+    parser.add_argument('--format', choices=['yaml', 'json'], default='yaml',
+                      help='Export format (default: yaml)')
+    args = parser.parse_args()
+    
+    try:
+        # Initialize rule manager
+        rule_manager = RuleManager(args.rules_dir)
+        
+        # List all rules
+        print(f"\nLoaded {len(rule_manager.rules)} rules:")
+        for rule in rule_manager.rules:
+            print(f"- {rule['id']}: {rule['name']} ({'enabled' if rule['enabled'] else 'disabled'})")
+        
+        # Export rules if requested
+        if args.export:
+            if rule_manager.export_rules(args.export, args.format):
+                print(f"\nSuccessfully exported rules to {args.export}")
+            else:
+                print("\nFailed to export rules")
+    
+    except Exception as e:
+        logger.error(f"Error: {e}", exc_info=True)
+        return 1
+    
+    return 0
+
 if __name__ == "__main__":
-    # Initialize rule manager
-    rule_manager = RuleManager("rules")
-    
-    # Get all enabled process rules
-    process_rules = rule_manager.get_rules(rule_type="process", enabled=True)
-    print(f"Loaded {len(process_rules)} process rules")
-    
-    # Export rules
-    rule_manager.export_rules("exported_rules.yaml")
+    import sys
+    sys.exit(main())
