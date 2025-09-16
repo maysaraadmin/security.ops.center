@@ -4,9 +4,11 @@ Network Detection and Response (NDR) GUI
 
 Provides a graphical interface for monitoring and responding to network threats.
 """
-import sys
+import asyncio
 import logging
+import os
 import queue
+import sys
 import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -17,9 +19,6 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                             QStatusBar, QMessageBox, QSplitter, QGroupBox, QFormLayout, QComboBox, QMenu)
 from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QIcon, QColor, QFont, QPalette
-
-import sys
-import os
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -45,66 +44,6 @@ class FlowCollectorWorker(QThread):
     flow_collected = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
     
-    def __init__(self, collector):
-        super().__init__()
-        self.collector = collector
-        self.running = True
-    
-    def run(self):
-        """Collect network flows."""
-        try:
-            self.collector.start()
-            while self.running:
-                flows = self.collector.get_recent_flows()
-                for flow in flows:
-                    if not self.running:
-                        break
-                    self.flow_collected.emit(flow)
-                self.msleep(1000)  # Sleep for 1 second
-        except Exception as e:
-            self.error_occurred.emit(f"Flow collection error: {str(e)}")
-    
-    def stop(self):
-        """Stop the worker thread."""
-        self.running = False
-        self.wait()
-
-
-class TrafficAnalyzerWorker(QThread):
-    """Worker thread for analyzing network traffic."""
-    alert_detected = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
-    
-    def __init__(self, collector, analyzer):
-        super().__init__()
-        self.collector = collector
-        self.analyzer = analyzer
-        self.running = True
-    
-    def run(self):
-        """Analyze network flows for threats."""
-        try:
-            while self.running:
-                flows = self.collector.get_recent_flows()
-                alerts = self.analyzer.analyze_flows(flows)
-                for alert in alerts:
-                    if not self.running:
-                        break
-                    self.alert_detected.emit(alert)
-                self.msleep(1000)  # Sleep for 1 second
-        except Exception as e:
-            self.error_occurred.emit(f"Traffic analysis error: {str(e)}")
-    
-    def stop(self):
-        """Stop the worker thread."""
-        self.running = False
-        self.wait()
-
-
-class FlowCollectorWorker(QObject):
-    """Worker thread for collecting network flows."""
-    flow_collected = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
     
     def __init__(self, flow_collector):
         super().__init__()
@@ -120,7 +59,13 @@ class FlowCollectorWorker(QObject):
         """Stop the worker thread."""
         self.running = False
         if hasattr(self.flow_collector, 'stop'):
-            self.flow_collector.stop()
+            if asyncio.iscoroutinefunction(self.flow_collector.stop):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self.flow_collector.stop())
+                loop.close()
+            else:
+                self.flow_collector.stop()
     
     def run(self):
         """Main worker loop."""
@@ -145,7 +90,7 @@ class FlowCollectorWorker(QObject):
             self.error_occurred.emit(f"Fatal error in flow collector: {e}")
 
 
-class TrafficAnalyzerWorker(QObject):
+class TrafficAnalyzerWorker(QThread):
     """Worker thread for analyzing network traffic."""
     alert_detected = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
@@ -826,39 +771,79 @@ class NDRGUI(QMainWindow):
                     break
             
             item.setHidden(not match_found)
+    
+    async def _stop_collector(self):
+        """Stop the flow collector asynchronously."""
+        if self.flow_collector and hasattr(self.flow_collector, 'stop'):
+            if asyncio.iscoroutinefunction(self.flow_collector.stop):
+                try:
+                    await self.flow_collector.stop()
+                except Exception as e:
+                    print(f"Error stopping flow collector: {e}", file=sys.stderr)
+            else:
+                try:
+                    self.flow_collector.stop()
+                except Exception as e:
+                    print(f"Error stopping flow collector: {e}", file=sys.stderr)
 
     def closeEvent(self, event):
         """Handle window close event."""
-        self.running = False
-        
-        # Stop worker threads
-        if hasattr(self, 'flow_worker'):
-            self.flow_worker.stop()
-        if hasattr(self, 'analysis_worker'):
-            self.analysis_worker.stop()
-        
-        # Stop the update timer
-        if hasattr(self, 'update_timer'):
-            self.update_timer.stop()
-        
-        event.accept()
+        try:
+            # Stop background tasks
+            self.running = False
+            
+            # Stop the update timer first
+            if hasattr(self, 'update_timer') and self.update_timer.isActive():
+                self.update_timer.stop()
+            
+            # Create and start event loop for async cleanup
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Stop worker threads with proper cleanup
+                if hasattr(self, 'flow_worker') and self.flow_worker:
+                    self.flow_worker.stop()
+                
+                if hasattr(self, 'analysis_worker') and self.analysis_worker:
+                    self.analysis_worker.stop()
+                
+                # Stop the flow collector
+                if hasattr(self, 'flow_collector') and self.flow_collector:
+                    try:
+                        loop.run_until_complete(self._stop_collector())
+                    except Exception as e:
+                        print(f"Error stopping flow collector: {e}", file=sys.stderr)
+                
+                # Stop the threads
+                if hasattr(self, 'flow_thread') and self.flow_thread.isRunning():
+                    self.flow_thread.quit()
+                    if not self.flow_thread.wait(2000):
+                        self.flow_thread.terminate()
+                
+                if hasattr(self, 'analysis_thread') and self.analysis_thread.isRunning():
+                    self.analysis_thread.quit()
+                    if not self.analysis_thread.wait(2000):
+                        self.analysis_thread.terminate()
+                
+                event.accept()
+                
+            except Exception as e:
+                print(f"Error during cleanup: {e}", file=sys.stderr)
+                event.accept()  # Still accept the close event
+                
+            finally:
+                try:
+                    if loop.is_running():
+                        loop.stop()
+                    loop.close()
+                except Exception as e:
+                    print(f"Error closing event loop: {e}", file=sys.stderr)
+                    
+        except Exception as e:
+            print(f"Fatal error during shutdown: {e}", file=sys.stderr)
+            event.accept()  # Ensure the application can still close
 
-        
-    def setup_logging(self):
-        """Set up logging configuration."""
-        self.logger = logging.getLogger('NDR_GUI')
-        self.logger.setLevel(logging.INFO)
-        
-        # Create console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        
-        # Create formatter and add it to the handlers
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        ch.setFormatter(formatter)
-        
-        # Add the handlers to the logger
-        self.logger.addHandler(ch)
 
 def main():
     """Main entry point for the NDR GUI application."""
