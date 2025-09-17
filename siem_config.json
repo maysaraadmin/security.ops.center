@@ -1,0 +1,17 @@
+{
+    "ui": {
+        "theme": "dark",
+        "font_size": 10,
+        "refresh_interval": 5000,
+        "window_size": [
+            1600,
+            1000
+        ]
+    },
+    "paths": {
+        "rules": "rules",
+        "reports": "reports",
+        "exports": "exports",
+        "logs": "logs"
+    }
+}
